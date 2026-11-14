@@ -1,7 +1,7 @@
 /* CampusCash service worker: makes the app installable and usable offline.
    It only ever caches this app's own files (same folder). Your financial data lives in localStorage and is never
    touched by the worker. To ship an update, change CACHE below (e.g. v2) so devices fetch the new files. */
-const CACHE = "campuscash-shell-v10";
+const CACHE = "campuscash-shell-v11";
 const SHELL = [
   "./", "index.html", "overview.html", "wallet.html", "404.html",
   "manifest.webmanifest",

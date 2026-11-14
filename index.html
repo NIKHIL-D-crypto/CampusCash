@@ -1437,7 +1437,7 @@ const dm={insights:"more",about:"more",contact:"more"};
 const io=new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting){const id=dm[e.target.id]||e.target.id;document.querySelectorAll(".dock button").forEach(b=>b.classList.toggle("on",b.dataset.go===id))}}),{rootMargin:"-45% 0px -54% 0px"});
 document.querySelectorAll("main section").forEach(s=>io.observe(s));
 // setup
-const VER="4.0.1";addEventListener("pageshow",e=>{if(e.persisted)location.reload()});document.querySelectorAll("[data-ver]").forEach(e=>e.textContent="v"+VER);
+const VER="4.0.2";addEventListener("pageshow",e=>{if(e.persisted)location.reload()});document.querySelectorAll("[data-ver]").forEach(e=>e.textContent="v"+VER);
 $("expCat").innerHTML=CATS.map(c=>`<option>${esc(c[0])}</option>`).join("");
 $("incDate").value=$("expDate").value=T.today;
 const ti=()=>{const d=theme.isDark();$("theme").checked=!d;$("theme").setAttribute("aria-label",d?"Use light theme":"Use dark theme")};ti();
