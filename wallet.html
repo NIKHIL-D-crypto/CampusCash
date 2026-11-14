@@ -1,0 +1,1352 @@
+<!doctype html>
+<!-- CampusCash standalone page: shared CSS and JavaScript are embedded in this file. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data: blob:; manifest-src 'self'; worker-src 'self'; connect-src 'none'; form-action 'none'; base-uri 'none'; object-src 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#F6ECE1" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#150711" media="(prefers-color-scheme: dark)">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="CampusCash">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<title>CampusCash — Card wallet</title>
+<script id="cc-perf-boot">
+/* CampusCash display mode: Premium (default) or Lite. Saved in localStorage as "cc-perf", separate from the light/dark theme.
+   Runs first in <head> so the saved mode is applied before anything is painted. */
+(function(){
+  "use strict";
+  var KEY="cc-perf", root=document.documentElement, mode="premium", live=null;
+  function read(){ try{ return localStorage.getItem(KEY)==="lite" ? "lite" : "premium"; }catch(e){ return mode; } }
+  function paint(){ root.setAttribute("data-perf", mode); }
+  function sync(){
+    var b=document.getElementById("liteMode"); if(!b) return;
+    var on=mode==="lite";
+    b.setAttribute("aria-pressed", on ? "true" : "false");
+    b.title = on ? "Lite Mode is on. Select to return to Premium Mode." : "Lite Mode: lighter visuals that run smoother on older phones.";
+  }
+  function say(t){
+    if(!live){ live=document.createElement("div"); live.className="lm-sr"; live.setAttribute("role","status"); live.setAttribute("aria-live","polite"); document.body.appendChild(live); }
+    live.textContent=""; setTimeout(function(){ live.textContent=t; },30);
+  }
+  mode=read(); paint();
+  document.addEventListener("DOMContentLoaded",function(){
+    var b=document.getElementById("liteMode"); sync(); if(!b) return;
+    b.addEventListener("click",function(){
+      mode = mode==="lite" ? "premium" : "lite";
+      try{ localStorage.setItem(KEY,mode); }catch(e){}
+      paint(); sync(); say(mode==="lite" ? "Lite Mode on" : "Premium Mode on");
+    });
+  });
+  window.addEventListener("storage",function(e){ if(e.key===KEY||e.key===null){ mode=read(); paint(); sync(); } });
+  window.addEventListener("pageshow",function(e){ if(e.persisted){ mode=read(); paint(); sync(); } });
+})();
+</script>
+<script>
+/* CampusCash core: logic shared by every page. Plain JS, no dependencies, no network.
+   Exposes one global, CC. Load it with a plain <script src> in <head> (it applies the theme). */
+(() => {
+  "use strict";
+
+  const KEY = "cc-v3";
+  const LEGACY_KEY = "campuscash-v1";
+  const CORRUPT_KEY = "cc-v3-corrupt";
+  const THEME_KEY = "cc-theme";
+
+  /* ---------- constants ---------- */
+
+  const CATS = [
+    ["Food", "#FFA63D", "🍱"], ["Travel", "#38B6AE", "🚌"], ["Books", "#E4577F", "📚"],
+    ["Programs", "#A66CD9", "🎟️"], ["Stationery", "#FF7A59", "✏️"],
+    ["Mobile & Internet", "#F2D16B", "📱"], ["Other", "#9C8796", "•"]
+  ];
+  const SRC = { Job: "💼", Family: "🏡", Other: "✨" };
+  const CAT_ALIASES = { "college programs": "Programs" };   // labels from older versions
+
+  /* ---------- small helpers ---------- */
+
+  const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const pad = n => String(n).padStart(2, "0");
+  const iso = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const money = n => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: n % 1 ? 2 : 0 }).format(n || 0);
+  const r2 = n => Math.round((n + Number.EPSILON) * 100) / 100;
+  const sum = a => r2(a.reduce((s, x) => s + Number(x.amount || 0), 0));
+  const uid = () => (crypto.randomUUID ? crypto.randomUUID() : String(Date.now() + Math.random()));
+  const ml = k => new Date(+k.slice(0, 4), +k.slice(5) - 1, 1).toLocaleDateString("en-IN", { month: "long", year: "numeric" });
+  const pm = k => iso(new Date(+k.slice(0, 4), +k.slice(5) - 2, 1)).slice(0, 7);
+  const inM = (list, k) => list.filter(x => x.date.slice(0, 7) === k);
+  const arr = a => (Array.isArray(a) ? a.filter(x => x && typeof x === "object") : []);
+  const clone = o => JSON.parse(JSON.stringify(o));
+  const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+
+  /* ---------- clock ---------- */
+  /* T is updated in place, so pages can hold on to it and always read the current day. */
+
+  const T = { now: new Date(), today: "", month: "" };
+  function setClock() {
+    T.now = new Date();
+    T.today = iso(T.now);
+    T.month = T.today.slice(0, 7);
+  }
+  setClock();
+
+  // Returns true when the local date has changed since the last call.
+  function tick() {
+    const before = T.today;
+    setClock();
+    return before !== T.today;
+  }
+  const ago = n => iso(new Date(T.now.getFullYear(), T.now.getMonth(), Math.max(1, T.now.getDate() - n)));
+
+  /* ---------- normalising loaded data ---------- */
+
+  function normCat(v) {
+    const s = String(v == null ? "" : v).trim().toLowerCase();
+    const hit = CATS.find(c => c[0].toLowerCase() === s);
+    return hit ? hit[0] : CAT_ALIASES[s] || "Other";
+  }
+
+  const DATE_RE = /^\d{4}-\d{2}-\d{2}/;
+
+  // Copies each entry, fills safe defaults, and guarantees unique ids.
+  // Entries saved without an id get a stable one (kind + position), so two tabs agree on it.
+  function cleanList(list, kind, fix) {
+    const seen = new Set();
+    return arr(list).map((x, i) => {
+      const e = { ...x };
+      let id = e.id == null || e.id === "" ? `${kind}-${i}` : String(e.id);
+      while (seen.has(id)) id += "~";
+      seen.add(id);
+      e.id = id;
+      e.amount = Number(e.amount) || 0;
+      e.name = String(e.name || "");
+      e.date = DATE_RE.test(e.date) ? String(e.date).slice(0, 10) : T.today;
+      return fix(e);
+    });
+  }
+
+  function normalise(o) {
+    const s = o && typeof o === "object" && !Array.isArray(o) ? { ...o } : {};
+    s.inc = cleanList(s.inc, "inc", e => { if (!SRC[e.source]) e.source = "Other"; return e; });
+    s.exp = cleanList(s.exp, "exp", e => { e.category = normCat(e.category); return e; });
+    s.cw = cleanList(s.cw, "cw", e => { if (e.k !== "w") e.k = "d"; return e; });
+    s.bOn = !!s.bOn;
+    s.bAmt = Number(s.bAmt) > 0 ? Number(s.bAmt) : 5000;
+    const bh = {};
+    if (s.bh && typeof s.bh === "object") {
+      Object.keys(s.bh).forEach(k => { if (/^\d{4}-\d{2}$/.test(k) && Number(s.bh[k]) > 0) bh[k] = Number(s.bh[k]); });
+    }
+    s.bh = bh;
+    s.rs = typeof s.rs === "string" ? s.rs : "";
+    s.ra = s.ra !== false;
+    s.co = s.co !== false;
+    s.ch = !!s.ch;
+    s.rev = Number.isInteger(s.rev) && s.rev > 0 ? s.rev : 0;
+    if (s.cl && !(typeof s.cl.s === "string" && typeof s.cl.i === "string" && typeof s.cl.d === "string")) delete s.cl;
+    if (s.cl) s.cw = [];   // the wallet lives in the encrypted blob until unlocked
+    return s;
+  }
+
+  /* ---------- storage ---------- */
+
+  const S = {};      // the live data. Always the same object; refreshed in place.
+  let base = null;   // what storage held at our last read or write (the merge ancestor)
+  let warn = "";
+  const listeners = [];
+
+  const persistForm = s => (s.cl ? { ...s, cw: [] } : s);   // never write a decrypted wallet
+  const persisted = () => clone(persistForm(S));
+
+  function readDisk() {
+    let raw = null;
+    try { raw = localStorage.getItem(KEY); } catch { return { state: null, raw: null, bad: false }; }
+    if (raw === null) return { state: null, raw: null, bad: false };
+    try { return { state: normalise(JSON.parse(raw)), raw, bad: false }; }
+    catch { return { state: null, raw, bad: true }; }
+  }
+
+  function quarantine(raw) {
+    try { localStorage.setItem(CORRUPT_KEY, raw); } catch {}
+  }
+
+  function legacy() {
+    try {
+      const o = JSON.parse(localStorage.getItem(LEGACY_KEY));
+      if (o && Array.isArray(o.expenses)) return { exp: o.expenses, bAmt: Number(o.budget) || 5000 };
+    } catch {}
+    return {};
+  }
+
+  function adopt(next) {
+    if (next === S) return;
+    Object.keys(S).forEach(k => delete S[k]);
+    Object.assign(S, next);
+  }
+
+  function load() {
+    const d = readDisk();
+    if (d.bad) {
+      quarantine(d.raw);
+      warn = "Saved data couldn’t be read. A copy was kept on this device.";
+    }
+    adopt(d.state || normalise(d.raw === null ? legacy() : {}));
+    base = clone(persistForm(S));
+  }
+
+  /* ---------- three-way merge ---------- */
+  /* base = what we last saw on disk, mine = our live data, disk = what is on disk now.
+     A change we made wins; anything else takes the other tab's version. */
+
+  function mergeList(b, mine, disk) {
+    const B = new Map(b.map(x => [x.id, x]));
+    const M = new Map(mine.map(x => [x.id, x]));
+    const D = new Set(disk.map(x => x.id));
+    const out = [];
+    disk.forEach(d => {
+      if (B.has(d.id) && !M.has(d.id)) return;                        // we deleted it
+      const m = M.get(d.id);
+      out.push(m && !same(m, B.get(d.id)) ? m : d);                   // our edit, else theirs
+    });
+    mine.forEach(m => {
+      if (D.has(m.id)) return;
+      if (!B.has(m.id) || !same(m, B.get(m.id))) out.push(m);         // our new entry, or our edit of one they deleted
+    });
+    return out;
+  }
+
+  function mergeMap(b, mine, disk) {
+    const out = { ...disk };
+    new Set([...Object.keys(b), ...Object.keys(mine)]).forEach(k => {
+      if (same(mine[k], b[k])) return;
+      if (mine[k] === undefined) delete out[k]; else out[k] = mine[k];
+    });
+    return out;
+  }
+
+  // Returns the merged state, or null if it cannot be merged safely.
+  function merge(b, mine, disk) {
+    const pick = k => (same(mine[k], b[k]) ? disk[k] : mine[k]);
+    const out = { ...disk };
+    out.inc = mergeList(b.inc, mine.inc, disk.inc);
+    out.exp = mergeList(b.exp, mine.exp, disk.exp);
+    ["bOn", "bAmt", "ra", "co", "ch"].forEach(k => { out[k] = pick(k); });
+    out.bh = mergeMap(b.bh, mine.bh, disk.bh);
+    out.rs = mine.rs > disk.rs ? mine.rs : disk.rs;                   // the recap marker only moves forward
+    const cl = pick("cl");
+    if (cl === undefined) delete out.cl; else out.cl = cl;
+    if (!cl) {
+      out.cw = mergeList(b.cw, mine.cw, disk.cw);
+    } else if (same(cl, mine.cl)) {
+      out.cw = mine.cw;                                               // our decrypted wallet stays in memory
+    } else {
+      if (!same(mine.cw, b.cw)) return null;                          // wallet was locked elsewhere; our change can't be saved
+      out.cw = [];
+    }
+    return out;
+  }
+
+  /* ---------- save / sync ---------- */
+
+  function notify(info) { listeners.forEach(fn => fn(info)); }
+
+  // Writes our data. If another tab saved since we last looked, merges first instead of overwriting.
+  // { force: true } writes ours as-is (used by Erase all). Returns true on success.
+  function save(opts) {
+    const force = !!(opts && opts.force);
+    try {
+      const d = readDisk();
+      let out = S;
+      if (d.bad) quarantine(d.raw);
+      else if (d.state && !force && d.state.rev !== base.rev) {
+        out = merge(base, S, d.state);
+        if (!out) {
+          toast("The card wallet changed in another tab. Reload this page, then try again.", 0, 1);
+          return false;
+        }
+      }
+      const rev = Math.max(d.state ? d.state.rev : 0, S.rev || 0) + 1;
+      localStorage.setItem(KEY, JSON.stringify({ ...persistForm(out), rev }));
+      const merged = out !== S;
+      adopt(out);
+      S.rev = rev;
+      base = clone(persistForm(S));
+      if (merged) notify({ data: true, day: false, merged: true });
+      return true;
+    } catch {
+      toast("Couldn’t save to this device. Storage may be full or blocked.", 0, 1);
+      return false;
+    }
+  }
+
+  // Replaces everything with an imported object. Bumps rev so other open tabs pick it up.
+  function replaceAll(obj) {
+    try {
+      const d = readDisk();
+      localStorage.setItem(KEY, JSON.stringify({ ...obj, rev: Math.max(d.state ? d.state.rev : 0, S.rev || 0) + 1 }));
+      return true;
+    } catch { return false; }
+  }
+
+  // Pulls in changes saved by another tab. Our own unsaved changes (if any) are kept.
+  function sync() {
+    const d = readDisk();
+    if (!d.state || d.state.rev === base.rev) return false;
+    adopt(merge(base, S, d.state) || d.state);
+    base = clone(persistForm(d.state));
+    return true;
+  }
+
+  function refresh() {
+    const day = tick();
+    const data = sync();
+    if (day || data) notify({ day, data, merged: false });
+  }
+
+  const onChange = fn => { listeners.push(fn); };
+
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(); });
+  addEventListener("storage", e => {
+    if (e.key === THEME_KEY) { theme.apply(); notify({ theme: true }); }
+    else if (e.key === KEY || e.key === null) refresh();
+  });
+  // Also catch midnight while the page stays visible.
+  (function midnight() {
+    const n = new Date();
+    const next = new Date(n.getFullYear(), n.getMonth(), n.getDate() + 1, 0, 0, 2);
+    setTimeout(() => { refresh(); midnight(); }, next - n);
+  })();
+
+  /* ---------- budgets ---------- */
+
+  // This month's own value, else the latest earlier month's, else the default.
+  function budgetFor(k) {
+    if (S.bh[k] !== undefined) return S.bh[k];
+    const earlier = Object.keys(S.bh).filter(m => m < k).sort().pop();
+    return earlier !== undefined ? S.bh[earlier] : S.bAmt;
+  }
+
+  // Sets the budget for month k. Earlier months that have entries keep the value they showed before,
+  // so changing today's budget never rewrites history.
+  function setBudget(k, n) {
+    const had = new Set(S.inc.concat(S.exp).map(x => x.date.slice(0, 7)));
+    [...had].filter(m => m < k && S.bh[m] === undefined).sort().forEach(m => { S.bh[m] = budgetFor(m); });
+    S.bh[k] = n;
+    S.bAmt = n;
+  }
+
+  /* ---------- calculations: the single source of truth ---------- */
+
+  function calc(k) {
+    k = k || T.month;
+    const dim = new Date(+k.slice(0, 4), +k.slice(5), 0).getDate();
+    const cur = k === T.month;
+    const el = cur ? T.now.getDate() : dim;
+    const ie = inM(S.inc, k), ee = inM(S.exp, k);
+    const inc = sum(ie), sp = sum(ee);
+    const before = x => x.date.slice(0, 7) < k;
+    const open = S.co ? r2(sum(S.inc.filter(before)) - sum(S.exp.filter(before))) : 0;   // carried in
+    return {
+      k, ie, ee, inc, sp, open, dim, cur, el,
+      left: r2(inc - sp),                 // this month's surplus or deficit on its own
+      bal: r2(open + inc - sp),           // "Left to spend": the number every page shows
+      prior: S.inc.some(before) || S.exp.some(before),
+      avg: el ? sp / el : 0,
+      rem: cur ? dim - T.now.getDate() + 1 : 0,
+      budget: budgetFor(k)
+    };
+  }
+
+  function catTotals(list) {
+    return CATS
+      .map(c => ({ n: c[0], c: c[1], i: c[2], t: sum(list.filter(e => normCat(e.category) === c[0])) }))
+      .filter(c => c.t > 0)
+      .sort((a, b) => b.t - a.t);
+  }
+
+  // Two separate, labelled lines: Balance and Budget left (budget is "" when budgets are off).
+  function lines(c) {
+    const safe = c.cur && c.rem > 0 && c.bal > 0 ? c.bal / c.rem : 0;
+    const balance = c.bal < 0
+      ? `Balance: ${money(-c.bal)} over ${c.open ? "what you had" : "what came in"}.`
+      : safe
+        ? `Balance: ${money(c.bal)}, about ${money(Math.floor(safe))} a day for the rest of the month.`
+        : `Balance: ${money(c.bal)} for this month.`;
+    let budget = "";
+    if (S.bOn) {
+      const left = r2(c.budget - c.sp);
+      budget = left < 0 ? `Budget left: none, ${money(-left)} over.` : `Budget left: ${money(left)}.`;
+    }
+    return { balance, budget };
+  }
+
+  /* ---------- theme ---------- */
+
+  const mq = typeof matchMedia === "function" ? matchMedia("(prefers-color-scheme:dark)") : null;
+  const theme = {
+    stored() {
+      try { const t = localStorage.getItem(THEME_KEY); return t === "light" || t === "dark" ? t : null; } catch { return null; }
+    },
+    apply() {
+      const t = theme.stored() || (mq && mq.matches ? "dark" : "light");
+      document.documentElement.dataset.theme = t;
+      return t;
+    },
+    isDark: () => document.documentElement.dataset.theme === "dark",
+    set(t) {
+      try { localStorage.setItem(THEME_KEY, t); } catch {}
+      theme.apply();
+    }
+  };
+  theme.apply();
+  if (mq && mq.addEventListener) mq.addEventListener("change", () => { if (!theme.stored()) { theme.apply(); notify({ theme: true }); } });
+
+  /* ---------- toast ---------- */
+
+  function toast(msg, action, sticky) {
+    let t = document.getElementById("toast");
+    if (!t) {
+      t = document.createElement("div");
+      t.id = "toast";
+      t.className = "toast g";
+      t.setAttribute("role", "status");
+      document.body.append(t);
+    }
+    t.textContent = msg;
+    if (action) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "tb";
+      b.textContent = action[0];
+      b.onclick = () => { action[1](); t.classList.remove("on"); };
+      t.append(b);
+    }
+    t.classList.add("on");
+    clearTimeout(toast.h);
+    toast.h = setTimeout(() => t.classList.remove("on"), action || sticky ? 5500 : 2400);
+  }
+
+  /* ---------- go ---------- */
+
+  load();
+
+  window.CC = {
+    CATS, SRC, S, T,
+    esc, iso, money, r2, sum, uid, ml, pm, ago, inM, normCat,
+    calc, catTotals, lines, budgetFor, setBudget,
+    save, replaceAll, persisted, onChange, theme, toast,
+    get warn() { return warn; }
+  };
+})();
+
+</script>
+<style id="campuscash-shared-styles">
+/* CampusCash shared styles: design tokens, base, and components used by more than one page.
+   Page-specific rules stay in each page's own <style> block. */
+
+/* ---- tokens ---- */
+:root {
+  --bg: #e8f2e9; --ink: #10231a; --mu: #55675c; --ac: #1f7a4d; --bt: #fff;
+  --lime: #b9ec5b; --co: #e5624b;
+  --gl: rgba(255,255,255,.5); --gb: rgba(255,255,255,.78); --fi: rgba(255,255,255,.55);
+  --sh: 0 10px 34px rgba(20,60,40,.13);
+  --b1: #c8f169; --b2: #7fd6c2; --b3: #c3b5ff;
+  --g1a: #1f7a4d; --g1b: #2fb38a; --g2a: #d9482f; --g2b: #d99a1f; --g3a: #1f8f86; --g3b: #6fa81f;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #08120d; --ink: #e9f4ec; --mu: #9bb0a2; --ac: #6fd49a; --bt: #07200f; --co: #ff8a73;
+    --gl: rgba(34,52,42,.5); --gb: rgba(255,255,255,.14); --fi: rgba(255,255,255,.08);
+    --sh: 0 10px 34px rgba(0,0,0,.45);
+    --b1: #2f5d1f; --b2: #10514a; --b3: #3b2f7a;
+    --g1a: #6fd49a; --g1b: #b9ec5b; --g2a: #ff8a73; --g2b: #f0b84a; --g3a: #7fd6c2; --g3b: #b9ec5b;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #08120d; --ink: #e9f4ec; --mu: #9bb0a2; --ac: #6fd49a; --bt: #07200f; --co: #ff8a73;
+  --gl: rgba(34,52,42,.5); --gb: rgba(255,255,255,.14); --fi: rgba(255,255,255,.08);
+  --sh: 0 10px 34px rgba(0,0,0,.45);
+  --b1: #2f5d1f; --b2: #10514a; --b3: #3b2f7a;
+  --g1a: #6fd49a; --g1b: #b9ec5b; --g2a: #ff8a73; --g2b: #f0b84a; --g3a: #7fd6c2; --g3b: #b9ec5b;
+  color-scheme: dark;
+}
+
+/* ---- semantic tokens (mode-independent) ----
+   The colour roles below are aliases of the mode-aware tokens above, so they follow light/dark automatically.
+   Media-query widths (760px, 420px) stay literal: CSS cannot read custom properties inside @media conditions. */
+:root {
+  /* colour roles */
+  --color-page: var(--bg);
+  --color-text: var(--ink);
+  --color-text-muted: var(--mu);
+  --color-accent: var(--ac);
+  --color-on-accent: var(--bt);
+  --color-lime: var(--lime);
+  --color-danger: var(--co);
+  --color-glass: var(--gl);
+  --color-glass-border: var(--gb);
+  --color-field: var(--fi);
+  --color-wash-1: var(--b1);
+  --color-wash-2: var(--b2);
+  --color-wash-3: var(--b3);
+  --shadow-glass: var(--sh);
+  /* fixed colours */
+  --color-ink-deep: #10231a;
+  --color-white: #fff;
+  --color-warning: #e0a53a;
+  --color-scrim: rgba(8,18,13,.5);
+  /* fixed shadows */
+  --shadow-plus: 0 4px 14px rgba(120,170,40,.45);
+  --shadow-thumb: 0 2px 6px rgba(0,0,0,.25);
+  --shadow-seg: 0 1px 4px rgba(0,0,0,.12);
+  /* device safe areas */
+  --safe-t: env(safe-area-inset-top, 0px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  /* spacing and size scale */
+  --sp-1: 1px;
+  --sp-2: 2px;
+  --sp-3: 3px;
+  --sp-4: 4px;
+  --sp-6: 6px;
+  --sp-7: 7px;
+  --sp-8: 8px;
+  --sp-9: 9px;
+  --sp-10: 10px;
+  --sp-11: 11px;
+  --sp-12: 12px;
+  --sp-13: 13px;
+  --sp-14: 14px;
+  --sp-15: 15px;
+  --sp-16: 16px;
+  --sp-18: 18px;
+  --sp-20: 20px;
+  --sp-22: 22px;
+  --sp-24: 24px;
+  --sp-26: 26px;
+  --sp-28: 28px;
+  --sp-30: 30px;
+  --sp-32: 32px;
+  --sp-34: 34px;
+  --sp-38: 38px;
+  --sp-40: 40px;
+  --sp-42: 42px;
+  --sp-44: 44px;
+  --sp-50: 50px;
+  --sp-52: 52px;
+  --sp-70: 70px;
+  --sp-72: 72px;
+  --sp-80: 80px;
+  --sp-86: 86px;
+  --sp-96: 96px;
+  --sp-100: 100px;
+  --sp-120: 120px;
+  --sp-130: 130px;
+  --sp-150: 150px;
+  --sp-170: 170px;
+  --sp-340: 340px;
+  --w-dialog: 440px;
+  --sp-640: 640px;
+  --w-topbar: 1004px;
+  --w-page: 1040px;
+  /* font sizes */
+  --fs-10_5: 10.5px;
+  --fs-13: 13px;
+  --fs-14: 14px;
+  --fs-16: 16px;
+  --fs-17: 17px;
+  --fs-18: 18px;
+  --fs-19: 19px;
+  --fs-20: 20px;
+  --fs-22: 22px;
+  --fs-28: 28px;
+  --fs-30: 30px;
+  --fs-34: 34px;
+  --fs-40: 40px;
+  --fs-46: 46px;
+  --fs-54: 54px;
+  --fs-78: 78px;
+  /* corner radii */
+  --r-2: 2px;
+  --r-6: 6px;
+  --r-10: 10px;
+  --r-11: 11px;
+  --r-12: 12px;
+  --r-14: 14px;
+  --r-15: 15px;
+  --r-16: 16px;
+  --r-22: 22px;
+  --r-24: 24px;
+  --r-28: 28px;
+  --r-30: 30px;
+  --r-round: 99px;
+  --r-pill: 999px;
+}
+
+/* ---- base ---- */
+:root {
+  box-sizing: border-box;
+  padding-top: var(--safe-t);
+  padding-bottom: var(--safe-b);
+}
+html { scroll-padding-top: var(--safe-t); }
+*, *::before, *::after { box-sizing: inherit; }
+body {
+  margin: 0; background: var(--color-page); color: var(--color-text);
+  font: var(--fs-16)/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+[hidden] { display: none !important; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: var(--sp-3) solid var(--color-accent); outline-offset: var(--sp-2); }
+h1, h2, h3, p { margin: 0; }
+h2 { font-size: clamp(var(--fs-28),4.6vw,var(--fs-46)); line-height: 1.08; letter-spacing: -.03em; font-weight: 720; }
+h3 { font-size: var(--fs-19); letter-spacing: -.015em; font-weight: 680; }
+.mu { color: var(--color-text-muted); }
+.w { max-width: var(--w-page); margin: auto; padding: 0 var(--sp-18); }
+.lead { font-size: clamp(var(--fs-17),2.2vw,var(--fs-20)); color: var(--color-text-muted); max-width: 34ch; margin-top: var(--sp-14); }
+
+/* ---- background wash + glass ---- */
+.bg { position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }
+.bg i { position: absolute; border-radius: 50%; filter: blur(var(--sp-80)); opacity: .9; }
+.bg i:nth-child(1) { width: 60vmax; height: 60vmax; background: var(--color-wash-1); left: -20vmax; top: -18vmax; }
+.bg i:nth-child(2) { width: 55vmax; height: 55vmax; background: var(--color-wash-2); right: -22vmax; top: 25vh; }
+.bg i:nth-child(3) { width: 50vmax; height: 50vmax; background: var(--color-wash-3); left: 10vmax; bottom: -25vmax; }
+.g {
+  background: var(--color-glass);
+  -webkit-backdrop-filter: blur(var(--sp-26)) saturate(180%); backdrop-filter: blur(var(--sp-26)) saturate(180%);
+  border: var(--sp-1) solid var(--color-glass-border); box-shadow: var(--shadow-glass), inset 0 var(--sp-1) 0 var(--color-glass-border); border-radius: var(--r-28);
+}
+
+/* ---- top bar ---- */
+.top {
+  position: fixed; z-index: 20; top: calc(var(--safe-t) + var(--sp-10)); left: 50%;
+  transform: translateX(-50%); width: min(var(--w-topbar), calc(100% - var(--sp-24)));
+  display: flex; align-items: center; justify-content: space-between; gap: var(--sp-10);
+  padding: var(--sp-7) var(--sp-8) var(--sp-7) var(--sp-10); border-radius: var(--r-pill);
+}
+.brand { display: flex; align-items: center; gap: var(--sp-9); font-weight: 720; letter-spacing: -.02em; }
+a.brand { color: inherit; text-decoration: none; }
+.mark { width: var(--sp-34); height: var(--sp-34); border-radius: var(--r-12); background: var(--color-accent); color: var(--color-on-accent); display: grid; place-items: center; font-weight: 800; font-size: var(--fs-19); }
+.ctl { display: flex; gap: var(--sp-7); align-items: center; }
+.pill { border: var(--sp-1) solid var(--color-glass-border); background: var(--color-field); border-radius: var(--r-pill); padding: var(--sp-8) var(--sp-13); font-size: var(--fs-14); font-weight: 600; }
+select.pill { appearance: none; -webkit-appearance: none; max-width: var(--sp-150); }
+
+/* ---- buttons ---- */
+.btn { display: inline-flex; justify-content: center; align-items: center; border: 0; border-radius: var(--r-pill); background: var(--color-accent); color: var(--color-on-accent); padding: var(--sp-13) var(--sp-22); font-weight: 700; text-decoration: none; font-size: var(--fs-16); }
+.btn.alt { background: var(--color-field); color: var(--color-text); border: var(--sp-1) solid var(--color-glass-border); }
+.btn.warn { background: transparent; color: var(--color-danger); border: var(--sp-1) solid var(--color-danger); }
+.btn:disabled { opacity: .45; }
+.back { position: fixed; z-index: 20; bottom: calc(var(--safe-b) + var(--sp-14)); left: 50%; transform: translateX(-50%); white-space: nowrap; padding: var(--sp-12) var(--sp-20); }
+.acts { display: flex; gap: var(--sp-10); flex-wrap: wrap; margin-top: var(--sp-16); }
+
+/* ---- big numbers ---- */
+.num { font-size: clamp(var(--fs-34),7vw,var(--fs-54)); font-weight: 760; letter-spacing: -.035em; font-variant-numeric: tabular-nums; line-height: 1.1; overflow-wrap: anywhere; }
+.num.neg { color: var(--color-danger); }
+
+/* ---- toast ---- */
+.toast {
+  position: fixed; z-index: 30; left: 50%; bottom: calc(var(--safe-b) + var(--sp-86));
+  transform: translate(-50%, var(--sp-20)); opacity: 0; pointer-events: none;
+  padding: var(--sp-11) var(--sp-18); font-weight: 600; font-size: var(--fs-14); transition: opacity .3s, transform .3s;
+  white-space: normal; max-width: calc(100% - var(--sp-28)); text-align: center; border-radius: var(--r-24);
+}
+.toast.on { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
+.tb { border: 0; background: none; color: var(--color-accent); font-weight: 750; margin-left: var(--sp-12); padding: var(--sp-2) var(--sp-4); }
+
+/* ---- cards, forms ---- */
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-18); }
+.card { padding: var(--sp-24); }
+.card h3 { margin-bottom: var(--sp-4); }
+form { display: grid; gap: var(--sp-13); margin-top: var(--sp-16); }
+.row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-12); }
+label { display: grid; gap: var(--sp-6); font-size: var(--fs-13); font-weight: 650; color: var(--color-text-muted); }
+input, select, textarea { width: 100%; background: var(--color-field); border: var(--sp-1) solid var(--color-glass-border); border-radius: var(--r-14); padding: var(--sp-12) var(--sp-14); font-size: var(--fs-16); color: var(--color-text); min-width: 0; }
+textarea { min-height: var(--sp-120); resize: vertical; }
+option { color: var(--color-ink-deep); }
+.seg { display: flex; background: var(--color-field); border: var(--sp-1) solid var(--color-glass-border); border-radius: var(--r-14); padding: var(--sp-3); }
+.seg button { flex: 1; border: 0; background: none; padding: var(--sp-9) var(--sp-6); border-radius: var(--r-11); font-weight: 600; color: var(--color-text-muted); font-size: var(--fs-14); }
+.seg button.on { background: var(--color-glass-border); color: var(--color-text); box-shadow: var(--shadow-seg); }
+
+/* switch */
+.sw { display: flex; align-items: center; gap: var(--sp-14); cursor: pointer; }
+.sw input { position: absolute; opacity: 0; width: var(--sp-1); height: var(--sp-1); }
+.sw .tk { width: var(--sp-52); height: var(--sp-32); border-radius: var(--r-round); background: var(--color-field); border: var(--sp-1) solid var(--color-glass-border); position: relative; transition: background .3s; flex: none; }
+.sw .tk::after { content: ""; position: absolute; top: var(--sp-2); left: var(--sp-2); width: var(--sp-26); height: var(--sp-26); border-radius: 50%; background: var(--color-white); box-shadow: var(--shadow-thumb); transition: transform .3s; }
+.sw input:checked + .tk { background: var(--color-accent); }
+.sw input:checked + .tk::after { transform: translateX(var(--sp-20)); }
+.sw input:focus-visible + .tk { outline: var(--sp-3) solid var(--color-accent); outline-offset: var(--sp-2); }
+.sw b { font-size: var(--fs-18); color: var(--color-text); font-weight: 680; }
+
+/* ---- entry rows ---- */
+.tx { display: flex; align-items: center; gap: var(--sp-13); padding: var(--sp-13) var(--sp-4); border-bottom: var(--sp-1) solid var(--color-glass-border); }
+.tx:last-child { border: 0; }
+.ic { width: var(--sp-42); height: var(--sp-42); border-radius: var(--r-15); background: var(--color-field); display: grid; place-items: center; font-size: var(--fs-20); flex: none; }
+.tx .n { flex: 1; min-width: 0; }
+.tx .n b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 650; }
+.tx .n span { font-size: var(--fs-13); color: var(--color-text-muted); }
+.amt { font-weight: 720; white-space: nowrap; }
+.amt.p { color: var(--color-accent); }
+.x { border: 0; background: none; color: var(--color-text-muted); font-size: var(--fs-22); padding: var(--sp-4) var(--sp-8); border-radius: var(--r-10); min-width: var(--sp-38); min-height: var(--sp-38); }
+.x:hover { color: var(--color-danger); }
+.empty { text-align: center; padding: var(--sp-30) var(--sp-10); color: var(--color-text-muted); }
+
+/* ---- dialog ---- */
+dialog { padding: 0; color: var(--color-text); width: min(var(--w-dialog), calc(100% - var(--sp-28))); max-height: 88svh; overflow: auto; margin: auto; }
+dialog::backdrop { background: var(--color-scrim); }
+#dB { padding: var(--sp-24); }
+#dB form { margin-top: var(--sp-12); }
+
+/* ---- responsive + motion ---- */
+@media (max-width: 760px) {
+  .two { grid-template-columns: 1fr; }
+  .brand span { display: none; }
+}
+@media (max-width: 420px) { .row { grid-template-columns: 1fr; } }
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; scroll-behavior: auto !important; }
+}
+
+</style>
+<style>
+h1,.t{font-size:clamp(40px,7.2vw,78px);line-height:1.02;letter-spacing:-.035em;font-weight:750}
+.cw{position:relative;overflow:hidden;isolation:isolate;display:flex;flex-direction:column;justify-content:space-between;gap:18px;min-height:196px;padding:20px 22px;border-radius:24px;color:#fff;background:linear-gradient(135deg,#0c3524 0%,#1f7a4d 58%,#2fb3a8 100%);box-shadow:0 14px 34px rgba(20,60,40,.3),inset 0 1px 0 rgba(255,255,255,.4)}
+.cw::before{content:"";position:absolute;z-index:-1;width:75%;aspect-ratio:1;right:-25%;top:-45%;border-radius:50%;background:radial-gradient(circle,rgba(185,236,91,.6),transparent 68%)}
+.cw::after{content:"";position:absolute;z-index:-1;top:0;bottom:0;left:0;width:55%;background:linear-gradient(115deg,transparent 20%,rgba(255,255,255,.22) 50%,transparent 80%);transform:translateX(-130%);animation:cws 6s ease-in-out infinite}
+.cw::before{animation:cwg 9s ease-in-out infinite alternate}
+@keyframes cws{0%,55%{transform:translateX(-130%)}100%{transform:translateX(280%)}}
+@keyframes cwg{to{transform:translate(-14%,12%)}}
+@media(prefers-reduced-motion:reduce){.cw::before,.cw::after{animation:none}}
+.cwt,.cwf{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.cwt span{font-size:12px;font-weight:750;letter-spacing:.18em}
+.cwe{border:1px solid rgba(255,255,255,.45);background:rgba(255,255,255,.16);color:#fff;border-radius:999px;padding:6px 14px;font-size:13px;font-weight:650}
+.cwl{display:block;font-size:13px;opacity:.85;font-weight:600}
+.cwb{font-size:clamp(32px,8vw,46px);font-weight:760;letter-spacing:-.035em;font-variant-numeric:tabular-nums;line-height:1.1;overflow-wrap:anywhere}
+.cwf span{font-size:13px;font-weight:600;opacity:.9}
+.cwc{flex:none;width:40px;height:29px;border-radius:7px;background:linear-gradient(135deg,#f5df93,#c99a2e);box-shadow:inset 0 0 0 1px rgba(0,0,0,.15)}
+.ey{font-size:13px;font-weight:700;letter-spacing:.16em;color:var(--mu);margin-bottom:12px}
+h1{background:linear-gradient(115deg,var(--ink) 15%,var(--ac) 85%);-webkit-background-clip:text;background-clip:text;color:transparent}
+.t{display:block;color:var(--ac)}
+#pg{position:fixed;z-index:30;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,var(--ac),var(--lime));transform-origin:0 0;transform:scaleX(0)}
+#story{height:300vh;position:relative}
+.stage{position:sticky;top:0;height:100svh;max-width:1040px;margin:auto;padding:84px 18px 96px;display:grid;grid-template-columns:1.1fr .9fr;align-items:center;gap:36px}
+.steps{display:grid}
+.step{grid-area:1/1;opacity:0;transform:translateY(26px);transition:opacity .55s,transform .55s;pointer-events:none}
+.step.on{opacity:1;transform:none;pointer-events:auto}
+.wd{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px;max-width:430px}
+.chip,.hint{display:inline-flex;align-items:center;gap:7px;padding:8px 14px;border-radius:999px;background:var(--fi);border:1px solid var(--gb);font-size:14px;font-weight:650}
+.hint{color:var(--mu)}.hint b{animation:hop 1.4s ease-in-out infinite}
+@keyframes hop{50%{transform:translateY(5px)}}
+.dots{display:flex;gap:7px;margin-top:24px}
+.dots button{position:relative;width:8px;height:8px;padding:0;border:0;border-radius:99px;background:var(--mu);opacity:.35;transition:all .4s}
+.dots button::after{content:"";position:absolute;inset:-14px -4px}
+.dots button.on{width:26px;background:var(--ac);opacity:1}
+.cwv{width:min(100%,400px);margin:auto}
+.manage{padding-top:30px;padding-bottom:130px}
+@media(max-width:760px){.stage{grid-template-columns:1fr;align-content:center;gap:16px;padding-top:88px}.cwv{order:-1;width:min(100%,340px)}.brand span{display:none}}
+@media(prefers-reduced-motion:reduce){.hint b{animation:none}}
+</style>
+<style id="polish">
+/* ===== CampusCash visual polish =====
+   CSS only: refines the palette, surfaces, type, buttons, forms, dock and dialogs. It does not touch markup behaviour,
+   element IDs, storage or calculations. Light/dark follow the existing theme switch. */
+:root{
+  --bg:#edf4ee;--ink:#0e2118;--mu:#586a5f;--ac:#157c4f;--ac2:#22a672;--bt:#fff;--lime:#c3ef63;--co:#d9513b;
+  --gl:rgba(255,255,255,.62);--gb:rgba(255,255,255,.85);--fi:rgba(255,255,255,.64);
+  --sh:0 1px 2px rgba(14,50,32,.06),0 16px 38px -14px rgba(14,70,44,.26);
+  --b1:#c8f08a;--b2:#a2e2d1;--b3:#d6cfff;
+  --pol-tint:rgba(21,124,79,.12);--pol-glow:rgba(21,124,79,.32);--pol-dlg:rgba(255,255,255,.93);
+}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#07110c;--ink:#e8f3ec;--mu:#98ada1;--ac:#6fd49a;--ac2:#9be8bf;--bt:#06210f;--lime:#c3ef63;--co:#ff8a73;
+  --gl:rgba(32,50,40,.55);--gb:rgba(255,255,255,.12);--fi:rgba(255,255,255,.075);
+  --sh:0 1px 2px rgba(0,0,0,.4),0 18px 40px -14px rgba(0,0,0,.65);
+  --b1:#27501a;--b2:#0e4a44;--b3:#33296e;
+  --pol-tint:rgba(111,212,154,.16);--pol-glow:rgba(111,212,154,.28);--pol-dlg:rgba(20,32,26,.95)}}
+:root[data-theme="dark"]{
+  --bg:#07110c;--ink:#e8f3ec;--mu:#98ada1;--ac:#6fd49a;--ac2:#9be8bf;--bt:#06210f;--lime:#c3ef63;--co:#ff8a73;
+  --gl:rgba(32,50,40,.55);--gb:rgba(255,255,255,.12);--fi:rgba(255,255,255,.075);
+  --sh:0 1px 2px rgba(0,0,0,.4),0 18px 40px -14px rgba(0,0,0,.65);
+  --b1:#27501a;--b2:#0e4a44;--b3:#33296e;
+  --pol-tint:rgba(111,212,154,.16);--pol-glow:rgba(111,212,154,.28);--pol-dlg:rgba(20,32,26,.95)}
+
+/* ---- type ---- */
+html{background:var(--bg)}
+body{min-height:100svh;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text","Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;-webkit-tap-highlight-color:transparent}
+h2{font-weight:740;letter-spacing:-.032em}
+h3{letter-spacing:-.018em}
+.num,.cwb,.amt{font-variant-numeric:tabular-nums}
+#dBal{font-size:clamp(44px,12.5vw,62px)}
+#dLab{font-weight:600;font-size:14px}
+
+/* ---- backdrop: soft radial glows (no blur filter to repaint) ---- */
+.bg i{filter:none;opacity:1}
+.bg i:nth-child(1){background:radial-gradient(closest-side,var(--b1),transparent 72%)}
+.bg i:nth-child(2){background:radial-gradient(closest-side,var(--b2),transparent 72%)}
+.bg i:nth-child(3){background:radial-gradient(closest-side,var(--b3),transparent 72%)}
+
+/* ---- glass: one blurred layer per surface, never nested ---- */
+.g{border-radius:26px;-webkit-backdrop-filter:blur(20px) saturate(160%);backdrop-filter:blur(20px) saturate(160%);background-image:linear-gradient(180deg,rgba(255,255,255,.30),rgba(255,255,255,0) 55%);box-shadow:var(--sh),inset 0 1px 0 var(--gb)}
+:root[data-theme="dark"] .g{background-image:linear-gradient(180deg,rgba(255,255,255,.06),rgba(255,255,255,0) 55%)}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]) .g{background-image:linear-gradient(180deg,rgba(255,255,255,.06),rgba(255,255,255,0) 55%)}}
+.card .g,.card .stat{-webkit-backdrop-filter:none;backdrop-filter:none;box-shadow:inset 0 1px 0 var(--gb),0 1px 2px rgba(14,50,32,.05)}
+.stat{border-radius:20px}
+.card{padding:22px}
+
+/* ---- header ---- */
+.top{padding:6px 8px 6px 8px}
+.brand{font-size:17px;font-weight:760;letter-spacing:-.025em}
+.mark{background:linear-gradient(140deg,var(--ac),var(--ac2));color:var(--bt);border-radius:12px;box-shadow:0 4px 12px -4px var(--pol-glow),inset 0 1px 0 rgba(255,255,255,.35)}
+.pill{min-height:40px;display:inline-flex;align-items:center;font-weight:620}
+select.pill{max-width:176px;padding-right:30px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%2398ada1' stroke-width='1.8' stroke-linecap='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center}
+
+/* ---- buttons ---- */
+.btn{min-height:48px;background:linear-gradient(135deg,var(--ac),var(--ac2));box-shadow:0 8px 18px -8px var(--pol-glow);transition:transform .15s,filter .2s}
+.btn:active{transform:scale(.98)}
+.btn.alt{background:var(--fi);box-shadow:none}
+.btn.warn{background:transparent;box-shadow:none}
+.back{box-shadow:0 8px 20px -8px var(--pol-glow)}
+
+/* ---- forms (checkboxes and the theme switch are left alone) ---- */
+input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),select,textarea{min-height:48px;background:var(--fi);transition:border-color .2s,box-shadow .2s}
+select.pill{min-height:40px}
+textarea{min-height:120px}
+input:not([type="checkbox"]):not([type="radio"]):focus,select:focus,textarea:focus{outline:0;border-color:var(--ac);box-shadow:0 0 0 4px var(--pol-tint)}
+.seg{border-radius:14px}
+.seg button{min-height:40px}
+.sw .tk{transition:background .25s}
+.sw input:checked+.tk{background:linear-gradient(135deg,var(--ac),var(--ac2))}
+
+/* ---- entries, charts ---- */
+.ic{background:var(--pol-tint);border-radius:14px}
+.x{min-width:44px;min-height:44px}
+.empty{border:1.5px dashed var(--gb);border-radius:18px;margin:6px 0}
+.bars b{background:linear-gradient(180deg,var(--ac),var(--ac2))}
+.bars b.z{background:var(--fi)}
+.bar{height:10px}
+
+/* ---- bottom dock ---- */
+.dock{width:min(440px,calc(100% - 24px));justify-content:space-between;gap:2px;padding:6px;border-radius:28px}
+.dock button{flex:1;min-width:0;min-height:52px;border-radius:22px;transition:background .2s,color .2s}
+.dock button b{display:grid;place-items:center;height:24px;font-weight:400}
+.dock button b svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.dock button.on{background:var(--pol-tint);color:var(--ac)}
+.dock .plus{background:linear-gradient(135deg,var(--lime),#a8dc44);color:#10231a;box-shadow:0 6px 16px -6px rgba(120,170,40,.6)}
+.more{border-radius:22px}
+.more button{min-height:44px}
+
+/* ---- dialogs and toast ---- */
+dialog.g{border-radius:28px;background-color:var(--pol-dlg);background-image:none;box-shadow:0 30px 70px -24px rgba(0,0,0,.5),inset 0 1px 0 var(--gb)}
+dialog::backdrop{background:rgba(6,16,11,.45)}
+dialog[open]{animation:pol-in .2s ease-out}
+@keyframes pol-in{from{opacity:0;transform:translateY(12px) scale(.98)}}
+.toast{background-color:var(--pol-dlg);background-image:none;border-radius:20px}
+@media(max-width:560px){dialog{margin:auto auto calc(var(--safe-b,0px) + 10px);width:calc(100% - 20px)}}
+
+/* ---- overview: lighter ring (no blur or glow filters on the animated parts) ---- */
+.ring.g{-webkit-backdrop-filter:none;backdrop-filter:none;transition:none;background-image:linear-gradient(160deg,rgba(255,255,255,.28),rgba(255,255,255,0))}
+.ring.s1{box-shadow:var(--sh),inset 0 1px 0 var(--gb),0 0 30px rgba(47,179,138,.24)}
+.ring.s2{box-shadow:var(--sh),inset 0 1px 0 var(--gb),0 0 30px rgba(229,98,75,.22)}
+.ring.s3{box-shadow:var(--sh),inset 0 1px 0 var(--gb),0 0 34px rgba(185,236,91,.34)}
+.ring #rI,.ring #rS{filter:none}
+.fl span:nth-child(n+4){display:none}
+
+/* ---- wallet card: one shimmer on load instead of endless loops ---- */
+.cw{border-radius:26px}
+.cw::before{animation:none}
+.cw::after{animation:cws 2.4s ease-out .5s 1 both}
+
+@media(prefers-reduced-motion:reduce){dialog[open]{animation:none}.cw::after{animation:none}}
+</style>
+<style id="perf-mode">
+/* ===== Display modes =====
+   Premium (default): frosted glass, backdrop blur, atmospheric glow, soft shadows.
+   Lite  (html[data-perf="lite"]): no backdrop blur, static gradients, flat shadows, almost no decorative motion.
+   The mode is stored separately from light/dark, so every combination works. */
+
+.ctl{display:flex;gap:7px;align-items:center;min-width:0}
+.ctl select.pill{min-width:0;text-overflow:ellipsis}
+.lm-sr{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+
+/* ---- the Lite Mode button (same look in both modes; the pressed state is the indicator) ---- */
+.lite-btn{display:inline-flex;align-items:center;gap:7px;min-height:40px;padding:0 14px 0 11px;font-family:inherit;font-size:13.5px;font-weight:650;color:var(--ink);cursor:pointer;white-space:nowrap;-webkit-tap-highlight-color:transparent;transition:background-color .2s,color .2s,border-color .2s,transform .15s}
+.lite-btn svg{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-width:2;stroke-linejoin:round;stroke-linecap:round;transition:fill .2s}
+.lite-btn:active{transform:scale(.97)}
+.lite-btn[aria-pressed="true"]{background:linear-gradient(135deg,var(--ac),var(--ac2));border-color:transparent;color:var(--bt)}
+.lite-btn[aria-pressed="true"] svg{fill:currentColor}
+@media(hover:hover){.lite-btn:not([aria-pressed="true"]):hover{background:var(--gb)}}
+.lite-btn:focus-visible,.theme-switch input:focus-visible+.theme-slider{outline:3px solid var(--ac);outline-offset:3px}
+@media(max-width:420px){.ctl{gap:5px}.ctl select.pill{padding-left:11px;padding-right:24px;font-size:13px;background-position:right 9px center}.lite-btn{padding:0 11px 0 9px;gap:5px;font-size:12.5px}.lite-btn svg{width:14px;height:14px}}
+
+/* ---- Premium refinements: a soft atmospheric light from above, a gentle button lift ---- */
+:root:not([data-perf="lite"]) .bg::after{content:"";position:absolute;inset:0;background:radial-gradient(62% 38% at 50% -8%,var(--pol-glow),transparent 72%);opacity:.7}
+@media(hover:hover){:root:not([data-perf="lite"]) .btn:not(:disabled):hover{transform:translateY(-1px);box-shadow:0 12px 22px -8px var(--pol-glow)}
+:root:not([data-perf="lite"]) .btn.alt:hover,:root:not([data-perf="lite"]) .btn.warn:hover{box-shadow:none}}
+
+/* ---- Lite tokens: one solid-ish surface per theme ---- */
+:root[data-perf="lite"]{--fi:rgba(21,124,79,.08);--lm-surface:rgba(255,255,255,.9);--lm-solid:#fbfdfb;--lm-line:rgba(14,50,32,.09);--lm-shadow:0 1px 2px rgba(14,50,32,.08),0 4px 10px -6px rgba(14,50,32,.14)}
+:root[data-perf="lite"][data-theme="dark"]{--fi:rgba(255,255,255,.075);--lm-surface:rgba(22,36,29,.93);--lm-solid:#14211a;--lm-line:rgba(255,255,255,.09);--lm-shadow:0 1px 2px rgba(0,0,0,.35),0 4px 10px -6px rgba(0,0,0,.45)}
+@media(prefers-color-scheme:dark){:root[data-perf="lite"]:not([data-theme="light"]){--fi:rgba(255,255,255,.075);--lm-surface:rgba(22,36,29,.93);--lm-solid:#14211a;--lm-line:rgba(255,255,255,.09);--lm-shadow:0 1px 2px rgba(0,0,0,.35),0 4px 10px -6px rgba(0,0,0,.45)}}
+
+/* ---- Lite: backdrop = three static gradients on one layer (no blur, nothing to repaint) ---- */
+:root[data-perf="lite"] .bg{background:radial-gradient(70vmax 55vmax at -8% -10%,var(--b1),transparent 70%),radial-gradient(60vmax 50vmax at 108% 45%,var(--b2),transparent 70%),radial-gradient(55vmax 45vmax at 20% 112%,var(--b3),transparent 70%)}
+:root[data-perf="lite"] .bg i{display:none}
+
+/* ---- Lite: surfaces ---- */
+:root[data-perf="lite"] .g{-webkit-backdrop-filter:none;backdrop-filter:none;background-color:var(--lm-surface);background-image:none;border-color:var(--lm-line);box-shadow:var(--lm-shadow),inset 0 1px 0 var(--gb)}
+:root[data-perf="lite"] .card .g,:root[data-perf="lite"] .card .stat{background-color:var(--fi);box-shadow:inset 0 1px 0 var(--gb)}
+:root[data-perf="lite"] dialog.g,:root[data-perf="lite"] .toast{background-color:var(--lm-solid);box-shadow:0 8px 24px -10px rgba(0,0,0,.4),inset 0 1px 0 var(--gb)}
+:root[data-perf="lite"] dialog::backdrop{background:rgba(6,16,11,.5)}
+:root[data-perf="lite"] dialog[open]{animation:lm-fade .14s ease-out}
+@keyframes lm-fade{from{opacity:0}}
+
+/* ---- Lite: glow removed, shadows flattened (fills and gradients stay, so it still looks designed) ---- */
+:root[data-perf="lite"] .mark{box-shadow:inset 0 1px 0 rgba(255,255,255,.3)}
+:root[data-perf="lite"] .btn,:root[data-perf="lite"] .back{box-shadow:inset 0 1px 0 rgba(255,255,255,.22),0 1px 2px rgba(14,50,32,.18)}
+:root[data-perf="lite"] .btn.g{background-color:transparent;background-image:linear-gradient(135deg,var(--ac),var(--ac2));border-color:transparent;box-shadow:inset 0 1px 0 rgba(255,255,255,.22),0 1px 2px rgba(14,50,32,.18)}
+:root[data-perf="lite"] .btn.alt,:root[data-perf="lite"] .btn.warn{box-shadow:none}
+:root[data-perf="lite"] .btn.alt,:root[data-perf="lite"] .pill,:root[data-perf="lite"] .hint{border-color:var(--lm-line)}
+:root[data-perf="lite"] .empty{border-color:var(--lm-line)}
+:root[data-perf="lite"] .dock .plus{box-shadow:inset 0 1px 0 rgba(255,255,255,.35),0 1px 2px rgba(60,90,10,.25)}
+:root[data-perf="lite"] .ring.g{background-image:none}
+:root[data-perf="lite"] .ring.g.s1{box-shadow:var(--lm-shadow),inset 0 0 0 2px rgba(47,179,138,.45)}
+:root[data-perf="lite"] .ring.g.s2{box-shadow:var(--lm-shadow),inset 0 0 0 2px rgba(229,98,75,.45)}
+:root[data-perf="lite"] .ring.g.s3{box-shadow:var(--lm-shadow),inset 0 0 0 2px rgba(185,236,91,.75)}
+:root[data-perf="lite"] .cw{box-shadow:0 1px 2px rgba(10,40,25,.28),inset 0 1px 0 rgba(255,255,255,.3)}
+:root[data-perf="lite"] .cw::before{animation:none}
+:root[data-perf="lite"] .cw::after{display:none;animation:none}
+:root[data-perf="lite"] .coin{box-shadow:0 2px 5px rgba(60,90,10,.3),inset 0 -4px 8px rgba(60,100,10,.25),inset 0 2px 3px rgba(255,255,255,.6)}
+:root[data-perf="lite"] .coin:not(.flip){animation:none}
+
+/* ---- Lite: motion ---- */
+:root[data-perf="lite"] .fl{display:none}
+:root[data-perf="lite"] .hint b{animation:none}
+:root[data-perf="lite"] .step{transform:none;transition:opacity .25s}
+:root[data-perf="lite"] .step.on .wd>*{animation:none}
+:root[data-perf="lite"] .tint i{transition:opacity .3s}
+:root[data-perf="lite"] .ring .ar{transition:stroke-dashoffset .5s ease-out,stroke .3s,opacity .2s}
+:root[data-perf="lite"] .bars b{transition-duration:.3s}
+:root[data-perf="lite"] .bar span{transition-duration:.3s,.2s}
+:root[data-perf="lite"] .theme-slider,:root[data-perf="lite"] .theme-slider:before{transition-duration:.2s}
+@media(prefers-reduced-motion:reduce){:root[data-perf="lite"] dialog[open]{animation:none}}
+</style>
+<style id="cc-theme-fx-css">
+/* Theme-switch transition. These rules are used only while a switch is animating; colours come from the existing tokens. */
+.cc-fx{position:fixed;width:200px;height:200px;margin:-100px 0 0 -100px;border-radius:50%;pointer-events:none;z-index:2147483000;will-change:transform}
+.cc-fx.wash{view-transition-name:cc-wash;background:radial-gradient(closest-side,transparent 52%,color-mix(in srgb,var(--lime) 24%,transparent) 80%,color-mix(in srgb,var(--ac) 20%,transparent) 90%,transparent 98%)}
+.cc-fx.shade{view-transition-name:cc-shade;background:radial-gradient(closest-side,transparent 90%,rgba(0,0,0,.2) 95.5%,transparent 100%)}
+.cc-fx.glow{view-transition-name:cc-glow;background:radial-gradient(closest-side,rgba(255,255,255,.3) 0,rgba(255,255,255,.07) 46%,rgba(255,255,255,.06) 62%,color-mix(in srgb,var(--ac) 30%,transparent) 82%,rgba(255,255,255,.62) 92.5%,rgba(255,255,255,0) 96%)}
+.cc-fx.echo{view-transition-name:cc-echo;background:radial-gradient(closest-side,transparent 86%,rgba(255,255,255,.5) 92.5%,transparent 97%)}
+.cc-fx.core{view-transition-name:cc-core;background:radial-gradient(closest-side,rgba(255,255,255,.95) 0,rgba(255,255,255,.45) 28%,color-mix(in srgb,var(--lime) 28%,transparent) 55%,transparent 100%)}
+.cc-fx.orb{background:radial-gradient(closest-side,rgba(255,255,255,.34) 0,rgba(255,255,255,.07) 46%,color-mix(in srgb,var(--ac) 30%,transparent) 82%,rgba(255,255,255,.55) 92.5%,rgba(255,255,255,0) 96%)}
+
+:root.cc-vt::view-transition-group(*),:root.cc-vt::view-transition-image-pair(*){animation:none}
+:root.cc-vt::view-transition-old(*),:root.cc-vt::view-transition-new(*){animation:none;mix-blend-mode:normal}
+:root.cc-vt::view-transition-new(root){transform-origin:var(--cc-ox,50%) var(--cc-oy,50%)}
+/* While it plays: hold decorative loops and colour fades so the revealed theme shows its final colours and nothing repaints needlessly */
+:root.cc-vt *,:root.cc-vt *::before,:root.cc-vt *::after{animation-play-state:paused!important}
+:root.cc-vt :not(.theme-slider),:root.cc-vt :not(.theme-slider)::before,:root.cc-vt :not(.theme-slider)::after{transition:none!important}
+
+/* fallback (no View Transitions): short colour cross-fade while the orb expands */
+:root.cc-fade *,:root.cc-fade *::before,:root.cc-fade *::after{transition:background-color .45s ease,color .45s ease,border-color .45s ease,fill .45s ease,stroke .45s ease,box-shadow .45s ease!important}
+</style>
+<script id="cc-theme-fx">
+/* Liquid-light theme transition. Intercepts a click on the existing #theme control, plays the effect, and re-fires the
+   original click inside the transition, so the page's own handler (theme.set, localStorage, icon update) runs unchanged. */
+(function(){
+  "use strict";
+  var root=document.documentElement, busy=false, passing=false;
+  var reduce=window.matchMedia?matchMedia("(prefers-reduced-motion: reduce)"):{matches:false};
+  var TAU=Math.PI*2, N=72, STEPS=32, SETTLE=.016;
+  if(typeof root.animate!=="function") return;
+
+  // cubic-bezier easing (same maths as CSS), used to sample the whole motion so every layer follows one smooth curve
+  function bez(x1,y1,x2,y2){
+    var cx=3*x1,bx=3*(x2-x1)-cx,ax=1-cx-bx, cy=3*y1,by=3*(y2-y1)-cy,ay=1-cy-by;
+    return function(t){
+      if(t<=0) return 0; if(t>=1) return 1;
+      var u=t,x,d;
+      for(var i=0;i<8;i++){ x=((ax*u+bx)*u+cx)*u-t; if(Math.abs(x)<1e-5) break; d=(3*ax*u+2*bx)*u+cx; if(Math.abs(d)<1e-6) break; u-=x/d; }
+      u=Math.min(1,Math.max(0,u)); return ((ay*u+by)*u+cy)*u;
+    };
+  }
+  var E=bez(.4,.4,.2,1);
+
+  // Motion state at time t (0..1): radius, slight ellipse, tilt and organic wobble
+  function sample(t,R0,Rf,seed){
+    var k=Math.min(1,t*1.15);
+    return {R:R0+(Rf-R0)*E(t), ecc:.05*Math.sin(Math.PI*k), rot:seed+t*.9, ph:seed*3+t*2.6, amp:.018+.032*Math.sin(Math.PI*Math.min(1,t*1.1)), t:t};
+  }
+  function series(R0,Rf,seed,lag,steps){
+    var a=[],t,j; for(j=0;j<=steps;j++){ t=j/steps; a.push(sample(lag?Math.max(0,(t-lag)/(1-lag)):t,R0,Rf,seed)); } return a;
+  }
+  function poly(ox,oy,s,div){
+    var p=[],a,f,r,A=s.R*(1+s.ecc)/div,B=s.R*(1-s.ecc)/div;
+    for(var i=0;i<N;i++){
+      a=i/N*TAU; f=a-s.rot;
+      r=A*B/Math.sqrt(Math.pow(B*Math.cos(f),2)+Math.pow(A*Math.sin(f),2));
+      r*=1+s.amp*(.55*Math.sin(3*a+s.ph)+.45*Math.sin(5*a-1.3*s.ph+1.7));
+      p.push((ox+Math.cos(a)*r).toFixed(2)+"px "+(oy+Math.sin(a)*r).toFixed(2)+"px");
+    }
+    return "polygon("+p.join(",")+")";
+  }
+  function tf(s,base,dx,dy){
+    return (dx||dy?"translate("+dx.toFixed(1)+"px,"+dy.toFixed(1)+"px) ":"")+"rotate("+s.rot.toFixed(3)+"rad) scale("+(s.R*(1+s.ecc)/base).toFixed(3)+","+(s.R*(1-s.ecc)/base).toFixed(3)+")";
+  }
+  function layer(cls,ox,oy,first){
+    var d=document.createElement("div"); d.className="cc-fx "+cls; d.style.left=ox+"px"; d.style.top=oy+"px";
+    if(first) d.style.transform=first; document.body.appendChild(d); return d;
+  }
+
+  // Toggle icon: rotate + scale with a small spring (the emoji / knob already shows the new theme)
+  function pulse(c,host,dur){
+    var t=host===c?c:(host.querySelector(".theme-slider")||host);
+    var kf=host===c
+      ? [{transform:"rotate(0deg) scale(1)"},{transform:"rotate(-130deg) scale(.5)",offset:.34},{transform:"rotate(24deg) scale(1.2)",offset:.66},{transform:"rotate(-6deg) scale(.96)",offset:.84},{transform:"rotate(0deg) scale(1)"}]
+      : [{transform:"rotate(0deg) scale(1)"},{transform:"rotate(-6deg) scale(.86)",offset:.34},{transform:"rotate(3deg) scale(1.09)",offset:.66},{transform:"rotate(-1deg) scale(.98)",offset:.84},{transform:"rotate(0deg) scale(1)"}];
+    t.animate(kf,{duration:dur*.9,easing:"cubic-bezier(.3,.7,.3,1)"});
+  }
+
+  function run(c,host){
+    var flip=function(){ passing=true; try{ c.click(); }finally{ passing=false; } };
+    var lite=root.getAttribute("data-perf")==="lite";
+    var r=host.getBoundingClientRect(), ox=r.left+r.width/2, oy=r.top+r.height/2;
+    var vw=root.clientWidth, vh=window.innerHeight, cx=vw/2, cy=vh/2;
+    var far=Math.max(Math.hypot(ox,oy),Math.hypot(vw-ox,oy),Math.hypot(ox,vh-oy),Math.hypot(vw-ox,vh-oy));
+    var R0=Math.max(r.width,r.height)*.55, Rf=far*1.12, dur=lite?460:800, seed=(ox+oy)%6.28;
+    var S=series(R0,Rf,seed,0,STEPS);
+    busy=true;
+
+    if(typeof document.startViewTransition!=="function"){ fallback(); return; }
+
+    var L=[], vt;
+    function done(){ L.forEach(function(d){d.remove();}); root.classList.remove("cc-vt"); root.style.removeProperty("--cc-ox"); root.style.removeProperty("--cc-oy"); busy=false; }
+    root.style.setProperty("--cc-ox",ox.toFixed(1)+"px"); root.style.setProperty("--cc-oy",oy.toFixed(1)+"px");
+    root.classList.add("cc-vt");
+    try{
+      vt=document.startViewTransition(function(){
+        flip();
+        if(!lite){
+          var W=series(R0,Rf,seed,.2,STEPS), Ec=series(R0,Rf,seed,.11,STEPS);
+          L.push(layer("wash",ox,oy,tf(W[0],93)), layer("shade",ox,oy,tf(S[0],94)), layer("glow",ox,oy,tf(S[0],93)),
+                 layer("echo",ox,oy,tf(Ec[0],93)), layer("core",ox,oy,"scale(.25)"));
+          L.W=W; L.Ec=Ec;
+        }
+      });
+    }catch(e){ done(); flip(); return; }
+    vt.finished.then(done,done);
+    vt.ready.then(function(){
+      var lin={duration:dur,easing:"linear",fill:"both"};
+      var pe=function(n,d){ return {duration:d||dur,easing:"linear",fill:"both",pseudoElement:"::view-transition-new("+n+")"}; };
+      var sc=function(s){ return 1+(lite?0:SETTLE)*(1-E(s.t)); };
+      // 1) the reveal: organic edge; the new theme also settles in from a slight push-in (edge is compensated so it matches the rim)
+      root.animate({clipPath:S.map(function(s){return poly(ox,oy,s,sc(s));})},pe("root"));
+      if(!lite) root.animate({transform:S.map(function(s){return "scale("+sc(s).toFixed(4)+")";})},pe("root"));
+      pulse(c,host,dur);
+      if(lite||!L.length) return;
+      // 2) light layers: all follow the same sampled curve; trailing ones lag so the edge has depth
+      var dl=Math.hypot(cx-ox,cy-oy)||1, ux=(cx-ox)/dl, uy=(cy-oy)/dl, W=L.W, Ec=L.Ec;
+      L[0].animate({transform:W.map(function(s){return tf(s,93);})},lin);
+      L[1].animate({transform:S.map(function(s){return tf(s,94,ux*s.R*.035,uy*s.R*.035);})},lin);
+      L[2].animate({transform:S.map(function(s){return tf(s,93);})},lin);
+      L[3].animate({transform:Ec.map(function(s){return tf(s,93);})},lin);
+      L[4].animate([{transform:"scale(.25)"},{transform:"scale("+Math.min(Rf*.5,far*.5)/100+")"}],{duration:dur*.6,easing:"cubic-bezier(.2,.7,.3,1)",fill:"both"});
+      root.animate({opacity:[0,.6,.5,.2,0],offset:[0,.15,.5,.8,.92]},pe("cc-wash"));
+      root.animate({opacity:[0,.7,.7,.35,0],offset:[0,.1,.5,.78,.95]},pe("cc-shade"));
+      root.animate({opacity:[0,.85,.85,.55,0],offset:[0,.07,.5,.75,.94]},pe("cc-glow"));
+      root.animate({opacity:[0,0,.55,.45,0],offset:[0,.05,.2,.55,.9]},pe("cc-echo"));
+      root.animate({opacity:[0,1,.55,0],offset:[0,.1,.3,1]},pe("cc-core",dur*.6));
+    },function(){});
+    setTimeout(function(){ try{ vt.skipTransition(); }catch(e){} },dur+1800);
+
+    function fallback(){
+      var orb=layer("orb",ox,oy,"scale(.1)"), a;
+      root.classList.add("cc-fade"); flip(); pulse(c,host,dur);
+      a=orb.animate([{transform:"scale(.1)",opacity:0},{transform:"scale("+(Rf*.55/100).toFixed(2)+")",opacity:.95,offset:.3},{transform:"scale("+(Rf/93).toFixed(2)+")",opacity:0}],{duration:dur,easing:"cubic-bezier(.22,.7,.28,1)",fill:"both"});
+      var end=function(){ orb.remove(); root.classList.remove("cc-fade"); busy=false; };
+      a.onfinish=end; a.oncancel=end; setTimeout(end,dur+400);
+    }
+  }
+
+  document.addEventListener("click",function(e){
+    if(passing) return;
+    var c=document.getElementById("theme"); if(!c) return;
+    var host=c.closest("label.theme-switch")||c;
+    if(!host.contains(e.target)||c.disabled) return;
+    if(reduce.matches) return;                       // reduced motion: existing instant switch, untouched
+    e.preventDefault(); e.stopImmediatePropagation();
+    if(busy) return;                                 // ignore rapid clicks while one is playing
+    run(c,host);
+  },true);
+})();
+</script>
+<style id="campuscash-ambient">
+/* ===== CampusCash colour system: "Mulberry Noir x Saffron" =====
+   60%  base   : mulberry-black (dark) / oat-milk cream (light), with soft saffron + rose light
+   30%  glass  : plum glass (dark) / warm-white glass (light), nav, dock, cards, fields
+   10%  accent : saffron (dark) / paprika (light) for buttons, links, highlights
+   The background is a fixed full-screen layer so it works on every device (iOS ignores background-attachment:fixed). */
+
+/* ---- light theme (default) ---- */
+:root {
+  --bg:#F6ECE1; --ink:#2A0F1F; --mu:#6B4D5F; --ac:#B8460E; --ac2:#E0711F; --bt:#FFF7EC;
+  --lime:#FFC04D; --co:#C71F4B;
+  --gl:rgba(255,250,244,.60); --gb:rgba(255,255,255,.72); --fi:rgba(122,40,80,.085);
+  --sh:0 1px 2px rgba(80,20,50,.07),0 18px 40px -16px rgba(130,30,70,.32);
+  --g1a:#B8460E; --g1b:#E0711F; --g2a:#C71F4B; --g2b:#D9730D; --g3a:#C0407E; --g3b:#D9640D;
+  --pol-tint:rgba(184,70,14,.10); --pol-glow:rgba(184,70,14,.30); --pol-dlg:rgba(255,250,244,.96);
+  --color-ink-deep:#2A0F1F; --color-warning:#D9730D; --color-scrim:rgba(42,15,31,.42);
+  --shadow-plus:0 4px 16px rgba(210,110,20,.45);
+  color-scheme:light;
+}
+:root[data-perf="lite"]{--fi:rgba(122,40,80,.085); --lm-surface:rgba(255,250,244,.93); --lm-solid:#FFF9F2; --lm-line:rgba(120,40,80,.14); --lm-shadow:0 1px 2px rgba(80,20,50,.08),0 4px 12px -6px rgba(80,20,50,.18);}
+
+/* ---- dark theme ---- */
+:root[data-theme="dark"] {
+  --bg:#150711; --ink:#FBEEE6; --mu:#CDB0BF; --ac:#FFB43B; --ac2:#FFD98A; --bt:#2B1300;
+  --lime:#FFC857; --co:#FF7A6B;
+  --gl:rgba(88,30,62,.46); --gb:rgba(255,205,232,.17); --fi:rgba(255,225,240,.075);
+  --sh:0 1px 2px rgba(0,0,0,.45),0 20px 44px -16px rgba(0,0,0,.72);
+  --g1a:#FFB43B; --g1b:#FF8A5B; --g2a:#FF7A6B; --g2b:#FFC857; --g3a:#FF8FB8; --g3b:#FFDC8A;
+  --pol-tint:rgba(255,180,59,.15); --pol-glow:rgba(255,180,59,.30); --pol-dlg:rgba(38,12,30,.97);
+  --color-ink-deep:#2B1300; --color-warning:#FFC857; --color-scrim:rgba(14,4,11,.6);
+  --shadow-plus:0 4px 18px rgba(255,170,50,.5);
+  color-scheme:dark;
+}
+:root[data-perf="lite"][data-theme="dark"]{ --fi:rgba(255,225,240,.075); --lm-surface:rgba(48,17,38,.94); --lm-solid:#2A0E22; --lm-line:rgba(255,205,232,.12); --lm-shadow:0 1px 2px rgba(0,0,0,.4),0 4px 12px -6px rgba(0,0,0,.55); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg:#150711; --ink:#FBEEE6; --mu:#CDB0BF; --ac:#FFB43B; --ac2:#FFD98A; --bt:#2B1300;
+  --lime:#FFC857; --co:#FF7A6B;
+  --gl:rgba(88,30,62,.46); --gb:rgba(255,205,232,.17); --fi:rgba(255,225,240,.075);
+  --sh:0 1px 2px rgba(0,0,0,.45),0 20px 44px -16px rgba(0,0,0,.72);
+  --g1a:#FFB43B; --g1b:#FF8A5B; --g2a:#FF7A6B; --g2b:#FFC857; --g3a:#FF8FB8; --g3b:#FFDC8A;
+  --pol-tint:rgba(255,180,59,.15); --pol-glow:rgba(255,180,59,.30); --pol-dlg:rgba(38,12,30,.97);
+  --color-ink-deep:#2B1300; --color-warning:#FFC857; --color-scrim:rgba(14,4,11,.6);
+  --shadow-plus:0 4px 18px rgba(255,170,50,.5);
+  color-scheme:dark;
+  }
+  :root[data-perf="lite"]:not([data-theme="light"]){ --fi:rgba(255,225,240,.075); --lm-surface:rgba(48,17,38,.94); --lm-solid:#2A0E22; --lm-line:rgba(255,205,232,.12); --lm-shadow:0 1px 2px rgba(0,0,0,.4),0 4px 12px -6px rgba(0,0,0,.55); }
+}
+
+/* ---- atmosphere ---- */
+body { background: transparent; }
+body::before {
+  content:""; position:fixed; inset:0; z-index:-1; pointer-events:none;
+  background:
+      radial-gradient(ellipse 95% 60% at 0% 0%, rgba(255,160,70,.55), transparent 80%),
+      radial-gradient(ellipse 70% 55% at 100% 36%, rgba(232,100,150,.34), transparent 80%),
+      radial-gradient(ellipse 85% 50% at 50% 100%, rgba(255,196,110,.42), transparent 80%),
+      linear-gradient(160deg,#FBF1E6 0%,#F6E8DC 55%,#F1DDD0 100%);
+}
+:root[data-theme="dark"] body::before {
+  background:
+      radial-gradient(ellipse 95% 60% at 0% 0%, rgba(255,140,55,.42), transparent 80%),
+      radial-gradient(ellipse 70% 55% at 100% 38%, rgba(226,62,124,.32), transparent 80%),
+      radial-gradient(ellipse 85% 45% at 50% 100%, rgba(176,48,92,.26), transparent 80%),
+      linear-gradient(160deg,#1E0818 0%,#150711 55%,#0E040B 100%);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) body::before {
+    background:
+      radial-gradient(ellipse 95% 60% at 0% 0%, rgba(255,140,55,.42), transparent 80%),
+      radial-gradient(ellipse 70% 55% at 100% 38%, rgba(226,62,124,.32), transparent 80%),
+      radial-gradient(ellipse 85% 45% at 50% 100%, rgba(176,48,92,.26), transparent 80%),
+      linear-gradient(160deg,#1E0818 0%,#150711 55%,#0E040B 100%);
+  }
+}
+.bg { display:none; }
+/* overview story tints, recoloured to the palette */
+.tint i:nth-child(1){background:radial-gradient(60vmax 50vmax at 15% 10%,rgba(255,170,60,.6),transparent 70%)}
+.tint i:nth-child(2){background:radial-gradient(60vmax 50vmax at 85% 30%,rgba(232,80,140,.5),transparent 70%)}
+.tint i:nth-child(3){background:radial-gradient(60vmax 50vmax at 15% 80%,rgba(255,110,90,.45),transparent 70%),radial-gradient(40vmax 40vmax at 90% 90%,rgba(255,200,90,.4),transparent 70%)}
+.tint i:nth-child(4){background:radial-gradient(60vmax 50vmax at 50% 25%,rgba(255,190,80,.5),transparent 70%),radial-gradient(50vmax 40vmax at 10% 90%,rgba(220,70,130,.4),transparent 70%)}
+
+/* ---- hard-coded colours that used to be green ---- */
+.cw{background:linear-gradient(135deg,#3A0F2B 0%,#A8325E 55%,#FF9A3C 100%); box-shadow:0 14px 34px rgba(90,20,60,.38),inset 0 1px 0 rgba(255,255,255,.4)}
+.cw::before{background:radial-gradient(circle,rgba(255,214,120,.65),transparent 68%)}
+.coin{color:#2A0F1F; background:radial-gradient(circle at 32% 26%,#FFF2D0,var(--lime) 42%,#E08A12); box-shadow:0 14px 30px rgba(224,138,18,.42),inset 0 -6px 12px rgba(150,70,0,.25),inset 0 4px 8px rgba(255,255,255,.75)}
+#gI stop:first-child{stop-color:#D9730D} #gI stop:last-child{stop-color:#F5BE4A}
+#gS stop:first-child{stop-color:#C71F4B} #gS stop:last-child{stop-color:#E8602F}
+:root[data-theme="dark"] #gI stop:first-child{stop-color:#FFB43B} :root[data-theme="dark"] #gI stop:last-child{stop-color:#FFE08A}
+:root[data-theme="dark"] #gS stop:first-child{stop-color:#FF6F9A} :root[data-theme="dark"] #gS stop:last-child{stop-color:#FF9A5B}
+.ring #rI{filter:drop-shadow(0 0 3px rgba(255,170,50,.55))}
+.ring #rS{filter:drop-shadow(0 0 3px rgba(255,100,130,.5))}
+:root[data-perf="lite"] .ring.g.s1{box-shadow:var(--lm-shadow),inset 0 0 0 2px rgba(255,170,50,.5)}
+:root[data-perf="lite"] .ring.g.s2{box-shadow:var(--lm-shadow),inset 0 0 0 2px rgba(232,80,120,.5)}
+:root[data-perf="lite"] .ring.g.s3{box-shadow:var(--lm-shadow),inset 0 0 0 2px rgba(255,200,90,.75)}
+.dock .plus{background:linear-gradient(135deg,var(--lime),#FF9F2E); color:#2A0F1F; box-shadow:0 6px 16px -6px rgba(235,130,20,.65)}
+:root[data-perf="lite"] .dock .plus{box-shadow:inset 0 1px 0 rgba(255,255,255,.35),0 1px 2px rgba(120,50,0,.28)}
+.ring.s1{box-shadow:var(--sh),inset 0 1px 0 var(--gb),0 0 56px rgba(255,170,50,.32)}
+.ring.s2{box-shadow:var(--sh),inset 0 1px 0 var(--gb),0 0 56px rgba(232,80,120,.30)}
+.ring.s3{box-shadow:var(--sh),inset 0 1px 0 var(--gb),0 0 64px rgba(255,200,90,.5)}
+.coin::before{border-color:rgba(60,20,30,.35)}
+.coin::after{filter:hue-rotate(0deg)}
+
+/* ===== Glass sliding segmented control (Job/Family/Other, All/Income/Spending, card action) =====
+   A glass track with a spring-loaded glider that slides under the selected option. Index is driven by --i, count by --n. */
+.seg{position:relative;isolation:isolate;overflow:hidden;--i:0;--n:3;
+  -webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);
+  box-shadow:inset 1px 1px 4px var(--gb),inset -1px -1px 6px rgba(40,10,30,.2),0 4px 12px rgba(40,10,30,.14)}
+.seg button{position:relative;z-index:1;flex:1 1 0;min-width:0;background:none;letter-spacing:.3px;
+  transition:color .3s ease-in-out;-webkit-tap-highlight-color:transparent}
+.seg button:hover{color:var(--color-text)}
+.seg button.on{background:none;box-shadow:none;color:var(--bt)}
+.seg .glider{position:absolute;z-index:0;top:3px;bottom:3px;left:3px;width:calc((100% - 6px) / var(--n));
+  border-radius:11px;pointer-events:none;
+  background:linear-gradient(135deg,var(--ac),var(--ac2));
+  box-shadow:0 0 18px var(--pol-glow),inset 0 0 10px rgba(255,255,255,.35);
+  transform:translateX(calc(var(--i) * 100%));
+  transition:transform .5s cubic-bezier(.37,1.95,.66,.56),box-shadow .4s ease-in-out}
+:root[data-perf="lite"] .seg{-webkit-backdrop-filter:none;backdrop-filter:none}
+:root[data-perf="lite"] .seg .glider{box-shadow:inset 0 0 8px rgba(255,255,255,.3)}
+@media (prefers-reduced-motion:reduce){.seg .glider{transition:none}}
+</style>
+</head>
+<body>
+<div class="bg" aria-hidden="true"><i></i><i></i><i></i></div>
+<div id="pg" aria-hidden="true"></div>
+<header class="top g"><a class="brand" href="index.html"><div class="mark">₹</div><span>CampusCash</span></a><div class="ctl"><button type="button" class="pill lite-btn" id="liteMode" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M13 2.5 5 13.5h6l-1 8 8-11h-6l1-8z"/></svg><span>Lite Mode</span></button><button class="pill" id="theme" aria-label="Switch light or dark theme">🌙</button></div></header>
+<main>
+<div id="story"><div class="stage">
+  <div class="txt">
+    <div class="steps" aria-live="polite">
+      <div class="step on"><p class="ey">01 / 03</p><h1>Savings, kept apart.</h1><p class="lead">Money in your bank account lives here, away from your monthly balance. Scroll to meet your card.</p><div class="wd"><span class="hint">Scroll to begin <b aria-hidden="true">↓</b></span><a class="btn alt" href="#manage">Jump to add money</a></div></div>
+      <div class="step"><p class="ey">02 / 03</p><p class="t">Saved on your card.</p><p class="lead" id="t1"></p><div class="wd" id="w1"></div></div>
+      <div class="step"><p class="ey">03 / 03</p><p class="t">Private by design.</p><p class="lead" id="t2"></p><div class="wd" id="w2"></div></div>
+    </div>
+    <div class="dots" id="dots"><button type="button" class="on" data-i="0" aria-label="Go to stage 1"></button><button type="button" data-i="1" aria-label="Go to stage 2"></button><button type="button" data-i="2" aria-label="Go to stage 3"></button></div>
+  </div>
+  <div class="cwv"><div class="cw" id="cw" role="group"><div class="cwt"><span>CARD WALLET</span><button class="cwe" type="button" id="cwEye" aria-pressed="false">Hide</button></div>
+    <div><span class="cwl">Saved on my card</span><div class="cwb" id="cwBal">₹0</div></div>
+    <div class="cwf"><span>🔒 Not counted in Left to spend</span><i class="cwc" aria-hidden="true"></i></div></div></div>
+</div></div>
+<div class="w manage" id="manage">
+  <div class="two">
+    <div class="card g"><h3>Update card money</h3><p class="mu">Save to your card, or take some out when you need it.</p>
+      <form id="cwForm">
+        <div class="seg" id="cwSeg" role="group" aria-label="Card action" style="--n:2"><button type="button" class="on" data-v="d">＋ Add to card</button><button type="button" data-v="w">− Take out</button><div class="glider" aria-hidden="true"></div></div>
+        <label>Note (optional)<input id="cwName" maxlength="60" placeholder="e.g. Scholarship, emergency fund"></label>
+        <div class="row"><label>Amount (₹)<input id="cwAmt" type="number" min="0.01" step="0.01" inputmode="decimal" placeholder="5000" required></label><label>Date<input id="cwDate" type="date" required></label></div>
+        <label class="sw" id="cwMvL" hidden><input type="checkbox" id="cwMv"><span class="tk"></span><b style="font-size:15px">Also add it to my spending money</b></label>
+        <button class="btn" type="submit" id="cwSub">Save to card</button>
+      </form></div>
+    <div class="card g"><h3>Card security</h3><p class="mu">Add a PIN to encrypt this wallet on your device. Without it, “Hide” only covers the numbers on screen.</p>
+      <div class="acts"><button class="btn alt" type="button" id="cwLk">🔒 Set PIN lock</button><button class="btn warn" type="button" id="cwRm" hidden>Remove PIN</button></div>
+      <p class="mu" style="font-size:13px;margin-top:14px">The wallet locks itself when you leave this tab. If you forget the PIN it can’t be recovered, so keep a backup.</p></div>
+  </div>
+  <div class="card g" style="margin-top:18px"><h3>Card history</h3><div id="cwList"></div></div>
+</div>
+</main>
+<a class="btn back g" href="index.html">⌂ Back to CampusCash</a>
+<dialog class="g" id="dlg" aria-labelledby="dT"><div id="dB"></div></dialog>
+<div class="toast g" id="toast" role="status"></div>
+<script>
+(()=>{
+const $=i=>document.getElementById(i);
+const {esc,money,sum,uid,toast,T,S}=CC;
+const calm=matchMedia("(prefers-reduced-motion:reduce)").matches;
+const arr=a=>Array.isArray(a)?a.filter(x=>x&&typeof x==="object"):[];
+const save=()=>CC.save();
+let K=null,locked=!!S.cl,clSig=JSON.stringify(S.cl||null),seenDay=T.today;   // clSig: spots a PIN change made in another tab
+const dlg=$("dlg"),show=h=>{$("dB").innerHTML=h;if(!dlg.open)dlg.showModal()};
+dlg.addEventListener("click",e=>{if(e.target===dlg||e.target.closest("[data-x]"))dlg.close()});
+
+const seg=(id,fn)=>{const g=$(id);g.onclick=e=>{const b=e.target.closest("button");if(!b)return;const bs=[...g.querySelectorAll("button")];bs.forEach(x=>x.classList.toggle("on",x===b));g.style.setProperty("--i",bs.indexOf(b));fn(b.dataset.v)}};
+const jump=()=>{};
+const cwBal=()=>sum(S.cw.filter(x=>x.k==="d"))-sum(S.cw.filter(x=>x.k==="w"));
+// PIN lock: AES-GCM key derived from the PIN with PBKDF2; only the encrypted wallet is stored
+const b64=u=>{let t="";u.forEach(c=>t+=String.fromCharCode(c));return btoa(t)},ub64=t=>Uint8Array.from(atob(t),c=>c.charCodeAt(0));
+const hasCr=()=>!!(window.crypto&&crypto.subtle);
+async function dk(pin,salt){const m=await crypto.subtle.importKey("raw",new TextEncoder().encode(pin),"PBKDF2",false,["deriveKey"]);return crypto.subtle.deriveKey({name:"PBKDF2",salt,iterations:250000,hash:"SHA-256"},m,{name:"AES-GCM",length:256},false,["encrypt","decrypt"])}
+async function seal(){const k=K,cw=S.cw,cl=S.cl,iv=crypto.getRandomValues(new Uint8Array(12)),ct=await crypto.subtle.encrypt({name:"AES-GCM",iv},k,new TextEncoder().encode(JSON.stringify(cw)));cl.i=b64(iv);cl.d=b64(new Uint8Array(ct));clSig=JSON.stringify(cl)}
+const wsave=async()=>{if(S.cl&&K)await seal();return save()};
+function lockNow(){if(!S.cl||locked)return;K=null;S.cw=[];locked=true;wal()}
+function setPin(){
+  if(!hasCr()){toast("PIN lock needs a secure (https) page.",0,1);return}
+  show(`<h3 id="dT">Set a PIN lock</h3><p class="mu" style="margin-top:6px">Your card wallet will be encrypted on this device. If you forget the PIN, the wallet can’t be recovered, so keep a backup.</p><form id="pF"><label>PIN or passphrase (6+ characters)<input name="p" type="password" minlength="6" maxlength="64" autocomplete="new-password" required></label><label>Repeat it<input name="r" type="password" minlength="6" maxlength="64" autocomplete="new-password" required></label><p class="mu" id="pE" role="alert"></p><div class="acts"><button class="btn" type="submit">Turn on lock</button><button class="btn alt" type="button" data-x>Cancel</button></div></form>`);
+  $("pF").onsubmit=async e=>{e.preventDefault();const f=e.target,p=f.p.value;if(p!==f.r.value){$("pE").textContent="The two entries don’t match.";return}
+    $("pE").textContent="Locking…";
+    try{const salt=crypto.getRandomValues(new Uint8Array(16));K=await dk(p,salt);S.cl={s:b64(salt),i:"",d:""};await seal();save();dlg.close();render();toast("Card wallet is now protected by your PIN")}
+    catch{K=null;delete S.cl;$("pE").textContent="Couldn’t turn on the lock in this browser."}}
+}
+function unlock(){
+  if(!hasCr()){toast("Unlocking needs a secure (https) page.",0,1);return}
+  show(`<h3 id="dT">Unlock card wallet</h3><form id="uF"><label>PIN or passphrase<input name="p" type="password" autocomplete="current-password" required></label><p class="mu" id="uE" role="alert"></p><div class="acts"><button class="btn" type="submit">Unlock</button><button class="btn alt" type="button" data-x>Cancel</button></div></form>`);
+  $("uF").onsubmit=async e=>{e.preventDefault();$("uE").textContent="Unlocking…";
+    try{const k=await dk(e.target.p.value,ub64(S.cl.s)),pt=await crypto.subtle.decrypt({name:"AES-GCM",iv:ub64(S.cl.i)},k,ub64(S.cl.d));S.cw=arr(JSON.parse(new TextDecoder().decode(pt)));K=k;locked=false;dlg.close();render()}
+    catch{$("uE").textContent="Wrong PIN or passphrase."}}
+}
+
+async function delW(id){if(locked)return;const i=S.cw.findIndex(x=>x.id===id);if(i<0)return;const[x]=S.cw.splice(i,1),ok=await wsave();render();
+  if(ok)toast("Card entry deleted",["Undo",async()=>{if(locked)return;S.cw.splice(Math.min(i,S.cw.length),0,x);await wsave();render()}])}
+
+let step=-1,shown=0,raf;
+function tween(to){cancelAnimationFrame(raf);const from=shown,t0=performance.now();
+  const f=t=>{const k=calm?1:Math.min(1,(t-t0)/700),e=1-Math.pow(1-k,3);shown=from+(to-from)*e;$("cwBal").textContent=money(k<1?Math.round(shown):to);if(k<1)raf=requestAnimationFrame(f)};raf=requestAnimationFrame(f)}
+function paint(){const i=Math.max(step,0),h=S.ch||locked;
+  document.querySelectorAll(".step").forEach((e,k)=>e.classList.toggle("on",k===i));
+  document.querySelectorAll("#dots button").forEach((e,k)=>e.classList.toggle("on",k===i));
+  if(h){cancelAnimationFrame(raf);$("cwBal").textContent=locked?"🔒 Locked":"₹ ••••••"}else tween(i>=1?cwBal():0)}
+function wal(){
+  clSig=JSON.stringify(S.cl||null);
+  const dep=S.cw.filter(x=>x.k==="d"),d=sum(dep),w=sum(S.cw.filter(x=>x.k==="w")),h=S.ch||locked,m=v=>h?"••••":money(v),n=dep.length;
+  $("cwEye").textContent=locked?"Unlock":S.ch?"Show":"Hide";$("cwEye").setAttribute("aria-pressed",!locked&&S.ch);
+  $("cw").setAttribute("aria-label",locked?"Card wallet, locked":h?"Card wallet, balance hidden":"Card wallet, balance "+money(d-w));
+  $("t1").textContent=locked?"Your wallet is locked. Unlock it to see your savings.":S.cw.length?`${m(d-w)} is saved on your card, from ${n} ${n===1?"deposit":"deposits"}.`:"Nothing saved yet. Add your first deposit below.";
+  $("w1").innerHTML=locked||!S.cw.length?"":`<span class="chip">＋ In <b>${m(d)}</b></span><span class="chip">↗ Out <b>${m(w)}</b></span>`;
+  $("t2").textContent=S.cl?(locked?"PIN lock is on and your wallet is locked.":"PIN lock is on. Your wallet is encrypted on this device."):"Add a PIN lock below to encrypt your wallet on this device.";
+  $("w2").innerHTML=`<span class="chip">${S.cl?"🔒 Encrypted":"🔓 Not locked"}</span><span class="chip">📵 Nothing uploaded</span>`;
+  $("cwLk").textContent=!S.cl?"🔒 Set PIN lock":locked?"🔓 Unlock":"🔒 Lock now";$("cwRm").hidden=!S.cl||locked;
+  const a=[...S.cw].sort((u,v)=>v.date.localeCompare(u.date));
+  $("cwList").innerHTML=locked?'<div class="empty">Card wallet is locked. Unlock it to see your history.</div>':a.length?a.map(x=>{const i=x.k==="d",dt=new Date(x.date+"T12:00:00").toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"});
+    return `<div class="tx"><div class="ic" aria-hidden="true">${i?"💳":"↗️"}</div><div class="n"><b>${esc(x.name||(i?"Added to card":"Taken out"))}</b><span>${dt}</span></div><div class="amt ${i?"p":""}">${i?"+":"−"}${h?"••••":money(x.amount)}</div><button class="x" type="button" data-wd="${esc(x.id)}" aria-label="Delete card entry">×</button></div>`}).join(""):'<div class="empty">No card money yet. Add what you’re saving above.</div>';
+  paint();
+}
+const render=()=>wal();
+document.addEventListener("click",e=>{const b=e.target.closest("[data-wd]");if(b)delW(b.dataset.wd)});
+let wm="d";$("cwDate").value=T.today;
+seg("cwSeg",v=>{wm=v;$("cwMvL").hidden=v!=="w";$("cwSub").textContent=v==="d"?"Save to card":"Take out"});
+$("cwEye").onclick=()=>{if(locked){unlock();return}S.ch=!S.ch;save();wal()};
+$("cwLk").onclick=()=>{if(!S.cl)setPin();else if(locked)unlock();else lockNow()};
+$("cwRm").onclick=()=>{if(!S.cl||locked)return;delete S.cl;K=null;const ok=save();render();ok&&toast("PIN removed. Card wallet is no longer encrypted.")};
+document.addEventListener("visibilitychange",()=>{if(document.hidden)lockNow()});
+$("cwForm").onsubmit=async e=>{e.preventDefault();if(locked){unlock();return}const amount=+$("cwAmt").value,date=$("cwDate").value,name=$("cwName").value.trim();if(!(amount>0)||!date)return;
+  const bal=cwBal();if(wm==="w"&&amount>bal+1e-9){toast(`Your card only has ${money(Math.max(0,bal))}.`,0,1);return}
+  const mv=wm==="w"&&$("cwMv").checked;S.cw.push({id:uid(),k:wm,amount,name,date});
+  if(mv){S.inc.push({id:uid(),name:name||"From card wallet",source:"Other",amount,date});jump(date)}
+  const ok=await wsave();e.target.reset();$("cwDate").value=T.today;render();
+  ok&&toast(wm==="d"?`Added ${money(amount)} to your card`:mv?`Took out ${money(amount)} and added it to spending money`:`Took out ${money(amount)}`)};
+
+const ti=()=>$("theme").textContent=CC.theme.isDark()?"☀️":"🌙";ti();
+$("theme").onclick=()=>{CC.theme.set(CC.theme.isDark()?"light":"dark");ti()};
+function onScroll(){const s=$("story"),hh=s.offsetHeight-innerHeight,p=Math.min(1,Math.max(0,-s.getBoundingClientRect().top/hh)),i=Math.min(2,Math.floor(p*3));
+  $("pg").style.transform=`scaleX(${p})`;if(i!==step){step=i;paint()}}
+$("dots").onclick=e=>{const b=e.target.closest("button");if(!b)return;const s=$("story"),hh=s.offsetHeight-innerHeight;
+  scrollTo({top:scrollY+s.getBoundingClientRect().top+(+b.dataset.i+.5)/3*hh,behavior:calm?"auto":"smooth"})};
+let tick=false;addEventListener("scroll",()=>{if(!tick){tick=true;requestAnimationFrame(()=>{tick=false;onScroll()})}},{passive:true});
+addEventListener("resize",onScroll);
+addEventListener("pageshow",e=>{if(e.persisted)location.reload()});
+$("cwDate").value=T.today;
+CC.onChange(e=>{
+  if(e.theme){ti();return}
+  if(JSON.stringify(S.cl||null)!==clSig){K=null;locked=!!S.cl;if(S.cl)S.cw=[]}   // PIN changed elsewhere: re-lock
+  if(T.today!==seenDay){if($("cwDate").value===seenDay)$("cwDate").value=T.today;seenDay=T.today}
+  wal();
+});
+wal();onScroll();
+})();
+
+</script>
+<script>
+/* PWA: register the service worker (works on https:// or localhost, not from file://) */
+if("serviceWorker"in navigator&&/^https?:$/.test(location.protocol)){addEventListener("load",function(){navigator.serviceWorker.register("sw.js").catch(function(){})})}
+</script>
+</body>
+</html>
