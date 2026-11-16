@@ -61,16 +61,17 @@
   /* ---------- constants ---------- */
 
   const CATS = [
-    ["Food", "#FFA63D", "🍱"], ["Travel", "#38B6AE", "🚌"], ["Books", "#E4577F", "📚"],
-    ["Programs", "#A66CD9", "🎟️"], ["Stationery", "#FF7A59", "✏️"],
-    ["Mobile & Internet", "#F2D16B", "📱"], ["Other", "#9C8796", "•"]
+    ["Food", "#FFA63D", "food"], ["Travel", "#38B6AE", "bus"], ["Books", "#E4577F", "book"],
+    ["Programs", "#A66CD9", "ticket"], ["Stationery", "#FF7A59", "pencil"],
+    ["Mobile & Internet", "#F2D16B", "phone"], ["Other", "#9C8796", "dots"]
   ];
-  const SRC = { Job: "💼", Family: "🏡", Other: "✨" };
+  const SRC = { Job: "briefcase", Family: "users", Other: "dots" };
   const CAT_ALIASES = { "college programs": "Programs" };   // labels from older versions
 
   /* ---------- small helpers ---------- */
 
   const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const ico = (n, c) => '<svg class="i' + (c ? " " + c : "") + '" aria-hidden="true" focusable="false"><use href="#i-' + n + '"></use></svg>';
   const pad = n => String(n).padStart(2, "0");
   const iso = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
   const money = n => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: n % 1 ? 2 : 0 }).format(n || 0);
@@ -436,7 +437,7 @@
 
   window.CC = {
     CATS, SRC, S, T,
-    esc, iso, money, r2, sum, uid, ml, pm, ago, inM, normCat,
+    esc, ico, iso, money, r2, sum, uid, ml, pm, ago, inM, normCat,
     calc, catTotals, lines, budgetFor, setBudget,
     save, replaceAll, persisted, onChange, theme, toast,
     get warn() { return warn; }
@@ -1207,50 +1208,120 @@ body::before {
 :root[data-perf="lite"] .seg{-webkit-backdrop-filter:none;backdrop-filter:none}
 :root[data-perf="lite"] .seg .glider{box-shadow:inset 0 0 8px rgba(255,255,255,.3)}
 @media (prefers-reduced-motion:reduce){.seg .glider{transition:none}}
+
+/* ===== v4.1 motion: tiny, purposeful, and off for Lite Mode / reduced motion ===== */
+/* count-up glow */
+.flash-up{animation:cc-flash-up .9s ease-out}
+.flash-down{animation:cc-flash-down .9s ease-out}
+@keyframes cc-flash-up{0%,100%{filter:drop-shadow(0 0 0 rgba(255,190,70,0))}28%{filter:drop-shadow(0 0 12px rgba(255,190,70,.95))}}
+@keyframes cc-flash-down{0%,100%{filter:drop-shadow(0 0 0 rgba(255,95,130,0))}28%{filter:drop-shadow(0 0 12px rgba(255,95,130,.9))}}
+/* entries land and leave */
+.tx-new{border-radius:16px;animation:cc-land .55s cubic-bezier(.2,.9,.25,1.12) both,cc-rowglow 1.9s ease-out .15s}
+@keyframes cc-land{from{opacity:0;transform:translateY(-14px) scale(.97)}to{opacity:1;transform:none}}
+@keyframes cc-rowglow{0%{background-color:var(--pol-glow)}100%{background-color:transparent}}
+.tx-out{height:0!important;padding-top:0!important;padding-bottom:0!important;border-bottom-width:0!important;opacity:0;transform:translateX(30px);overflow:hidden;
+  transition:height .26s cubic-bezier(.4,0,.2,1),padding .26s cubic-bezier(.4,0,.2,1),opacity .2s ease-out,transform .26s cubic-bezier(.4,0,.2,1)}
+/* save button tick */
+.btn.ok{color:transparent!important;position:relative;pointer-events:none}
+.btn.ok::after{content:"";position:absolute;left:50%;top:50%;width:.42em;height:.82em;margin:-.5em 0 0 -.21em;border:solid var(--bt);border-width:0 .17em .17em 0;border-radius:1px;transform:rotate(45deg);animation:cc-pop .5s cubic-bezier(.2,1.7,.4,1) both}
+@keyframes cc-pop{from{transform:rotate(45deg) scale(.2);opacity:0}to{transform:rotate(45deg) scale(1);opacity:1}}
+/* charts + budget */
+.bars b{transform-origin:50% 100%}
+.bar.pulse-warn{animation:cc-pulse-w 1s ease-out}
+.bar.pulse-over{animation:cc-pulse-o 1s ease-out}
+@keyframes cc-pulse-w{0%{box-shadow:0 0 0 0 rgba(255,200,87,.85)}35%{box-shadow:0 0 0 8px rgba(255,200,87,0);transform:scaleY(1.55)}100%{box-shadow:0 0 0 0 rgba(255,200,87,0);transform:none}}
+@keyframes cc-pulse-o{0%{box-shadow:0 0 0 0 rgba(255,111,107,.9)}35%{box-shadow:0 0 0 8px rgba(255,111,107,0);transform:scaleY(1.55)}100%{box-shadow:0 0 0 0 rgba(255,111,107,0);transform:none}}
+/* press feedback: a springy squeeze on everything tappable */
+.btn{transition:transform .2s cubic-bezier(.3,1.5,.5,1),filter .2s}
+.btn:active{transform:scale(.96)}
+.dock button{position:relative;z-index:1;transition:background .2s,color .2s,transform .2s cubic-bezier(.3,1.5,.5,1)}
+.dock button:active{transform:scale(.88)}
+.seg button{transition:color .3s ease-in-out,transform .2s cubic-bezier(.3,1.5,.5,1)}
+.seg button:active{transform:scale(.93)}
+.pill{transition:transform .2s cubic-bezier(.3,1.5,.5,1),background .2s,border-color .2s}
+.pill:active{transform:scale(.94)}
+.x{transition:transform .2s cubic-bezier(.3,1.5,.5,1),background .2s}
+.x:active{transform:scale(.82)}
+.sw,.theme-switch,.more button{transition:transform .2s cubic-bezier(.3,1.5,.5,1)}
+.sw:active{transform:scale(.975)}
+.theme-switch:active{transform:scale(.94)}
+.more button:active{transform:scale(.97)}
+/* dock: one glass highlight that glides between tabs */
+.dock{--gx:0px;--gw:0px}
+.dock .dock-glider{position:absolute;z-index:0;top:6px;bottom:6px;left:0;width:var(--gw);border-radius:22px;background:var(--pol-tint);
+  transform:translateX(var(--gx));opacity:0;pointer-events:none;
+  transition:transform .5s cubic-bezier(.37,1.55,.5,1),width .35s cubic-bezier(.3,.9,.3,1),opacity .2s}
+.dock.glide .dock-glider{opacity:1}
+.dock.glide.no-tr .dock-glider{transition:none}
+.dock.glide.on-plus .dock-glider{opacity:0}
+.dock.glide button.on:not(.plus){background:none}
+.dock button.plus.on{background:linear-gradient(135deg,var(--lime),#FF9F2E);color:#2A0F1F}
+/* calm modes */
+:root[data-perf="lite"] .flash-up,:root[data-perf="lite"] .flash-down,:root[data-perf="lite"] .tx-new,
+:root[data-perf="lite"] .bar.pulse-warn,:root[data-perf="lite"] .bar.pulse-over{animation:none}
+:root[data-perf="lite"] .dock .dock-glider{transition-duration:.2s;transition-timing-function:ease-out}
+@media (prefers-reduced-motion:reduce){
+  .flash-up,.flash-down,.tx-new,.bar.pulse-warn,.bar.pulse-over,.btn.ok::after{animation:none}
+  .dock .dock-glider,.dock button,.btn,.seg button,.pill,.x,.sw,.theme-switch,.more button{transition:none}
+  .tx-out{transition:none}
+}
+
+/* ===== line icons (replace emoji) ===== */
+.i{width:1.2em;height:1.2em;flex:none;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;vertical-align:-.22em;overflow:visible}
+.ic .i{width:22px;height:22px;color:var(--ac)}
+.btn,.chip,.seg button,.cwf>span{display:inline-flex;align-items:center;justify-content:center;gap:.45em}
+.btn .i,.chip .i,.seg button .i,.cwf .i,.cr .i,.pill .i{width:1.12em;height:1.12em}
+.x .i{width:19px;height:19px}
+.pill{gap:.4em}
+.hint b{display:inline-flex}
+.hint b .i{width:1em;height:1em}
+#theme .i{width:1.2em;height:1.2em;color:var(--ac)}
+#leg .i{width:1.05em;height:1.05em;color:var(--mu);margin-right:.2em}
+.safe .i{margin-right:.25em;color:var(--ac)}
 </style>
 </head>
-<body>
+<body><svg xmlns="http://www.w3.org/2000/svg" width="0" height="0" style="position:absolute;overflow:hidden" aria-hidden="true" focusable="false"><symbol id="i-food" viewBox="0 0 24 24"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/></symbol><symbol id="i-bus" viewBox="0 0 24 24"><path d="M8 6v6"/><path d="M15 6v6"/><path d="M2 12h19.6"/><path d="M18 18h3s.5-1.7.8-2.8c.1-.4.2-.8.2-1.2 0-.4-.1-.8-.2-1.2l-1.4-5C20.1 6.8 19.1 6 18 6H4a2 2 0 0 0-2 2v10h3"/><circle cx="7" cy="18" r="2"/><path d="M9 18h5"/><circle cx="16" cy="18" r="2"/></symbol><symbol id="i-book" viewBox="0 0 24 24"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></symbol><symbol id="i-ticket" viewBox="0 0 24 24"><path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z"/><path d="M13 5v2"/><path d="M13 17v2"/><path d="M13 11v2"/></symbol><symbol id="i-pencil" viewBox="0 0 24 24"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></symbol><symbol id="i-phone" viewBox="0 0 24 24"><rect width="14" height="20" x="5" y="2" rx="2" ry="2"/><path d="M12 18h.01"/></symbol><symbol id="i-dots" viewBox="0 0 24 24"><path d="M5 12h.01M12 12h.01M19 12h.01" stroke-width="3"/></symbol><symbol id="i-briefcase" viewBox="0 0 24 24"><rect width="20" height="14" x="2" y="7" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></symbol><symbol id="i-users" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></symbol><symbol id="i-chart" viewBox="0 0 24 24"><path d="M3 20h18"/><path d="M6 20v-8"/><path d="M12 20V5"/><path d="M18 20v-5"/></symbol><symbol id="i-card" viewBox="0 0 24 24"><rect width="20" height="14" x="2" y="5" rx="2"/><path d="M2 10h20"/></symbol><symbol id="i-lock" viewBox="0 0 24 24"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></symbol><symbol id="i-unlock" viewBox="0 0 24 24"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></symbol><symbol id="i-user-x" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="m17 8 5 5"/><path d="m22 8-5 5"/></symbol><symbol id="i-eye-off" viewBox="0 0 24 24"><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><path d="m2 2 20 20"/></symbol><symbol id="i-ban" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/></symbol><symbol id="i-cloud-off" viewBox="0 0 24 24"><path d="m2 2 20 20"/><path d="M5.782 5.782A7 7 0 0 0 9 19h8.5a4.5 4.5 0 0 0 1.307-.193"/><path d="M21.532 16.5A4.5 4.5 0 0 0 17.5 10h-1.79A7.008 7.008 0 0 0 10 5.07"/></symbol><symbol id="i-home" viewBox="0 0 24 24"><path d="M3 11l9-8 9 8v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/></symbol><symbol id="i-sprout" viewBox="0 0 24 24"><path d="M7 20h10"/><path d="M10 20c5.5-2.5.8-6.4 3-10"/><path d="M9.5 9.4c1.1.8 1.8 2.2 2.3 3.7-2 .4-3.5.4-4.8-.3-1.2-.6-2.3-1.9-3-4.2 2.8-.5 4.4 0 5.5.8z"/><path d="M14.1 6a7 7 0 0 0-1.1 4c1.9-.1 3.3-.6 4.3-1.4 1-1 1.6-2.3 1.7-4.6-2.7.1-4 1-4.9 2z"/></symbol><symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></symbol><symbol id="i-down" viewBox="0 0 24 24"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></symbol><symbol id="i-up-right" viewBox="0 0 24 24"><path d="M7 17 17 7"/><path d="M7 7h10v10"/></symbol><symbol id="i-plus" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></symbol><symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol><symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><path d="M10 11v6"/><path d="M14 11v6"/></symbol><symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></symbol><symbol id="i-moon" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></symbol><symbol id="i-shield" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></symbol></svg>
 <div class="bg" aria-hidden="true"><i></i><i></i><i></i></div>
 <div id="pg" aria-hidden="true"></div>
-<header class="top g"><a class="brand" href="index.html"><div class="mark">₹</div><span>CampusCash</span></a><div class="ctl"><button type="button" class="pill lite-btn" id="liteMode" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M13 2.5 5 13.5h6l-1 8 8-11h-6l1-8z"/></svg><span>Lite Mode</span></button><button class="pill" id="theme" aria-label="Switch light or dark theme">🌙</button></div></header>
+<header class="top g"><a class="brand" href="index.html"><div class="mark">₹</div><span>CampusCash</span></a><div class="ctl"><button type="button" class="pill lite-btn" id="liteMode" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M13 2.5 5 13.5h6l-1 8 8-11h-6l1-8z"/></svg><span>Lite Mode</span></button><button class="pill" id="theme" aria-label="Switch light or dark theme"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-moon"></use></svg></button></div></header>
 <main>
 <div id="story"><div class="stage">
   <div class="txt">
     <div class="steps" aria-live="polite">
-      <div class="step on"><p class="ey">01 / 03</p><h1>Savings, kept apart.</h1><p class="lead">Money in your bank account lives here, away from your monthly balance. Scroll to meet your card.</p><div class="wd"><span class="hint">Scroll to begin <b aria-hidden="true">↓</b></span><a class="btn alt" href="#manage">Jump to add money</a></div></div>
-      <div class="step"><p class="ey">02 / 03</p><p class="t">Saved on your card.</p><p class="lead" id="t1"></p><div class="wd" id="w1"></div></div>
-      <div class="step"><p class="ey">03 / 03</p><p class="t">Private by design.</p><p class="lead" id="t2"></p><div class="wd" id="w2"></div></div>
+      <div class="step on"><p class="ey">01 / 03</p><h1>Card wallet</h1><p class="lead">Track money you’ve saved on your card. It never counts toward Left to spend.</p><div class="wd"><span class="hint">Scroll to begin <b aria-hidden="true"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-down"></use></svg></b></span><a class="btn alt" href="#manage">Jump to add money</a></div></div>
+      <div class="step"><p class="ey">02 / 03</p><p class="t">Card balance</p><p class="lead" id="t1"></p><div class="wd" id="w1"></div></div>
+      <div class="step"><p class="ey">03 / 03</p><p class="t">Card security</p><p class="lead" id="t2"></p><div class="wd" id="w2"></div></div>
     </div>
     <div class="dots" id="dots"><button type="button" class="on" data-i="0" aria-label="Go to stage 1"></button><button type="button" data-i="1" aria-label="Go to stage 2"></button><button type="button" data-i="2" aria-label="Go to stage 3"></button></div>
   </div>
   <div class="cwv"><div class="cw" id="cw" role="group"><div class="cwt"><span>CARD WALLET</span><button class="cwe" type="button" id="cwEye" aria-pressed="false">Hide</button></div>
     <div><span class="cwl">Saved on my card</span><div class="cwb" id="cwBal">₹0</div></div>
-    <div class="cwf"><span>🔒 Not counted in Left to spend</span><i class="cwc" aria-hidden="true"></i></div></div></div>
+    <div class="cwf"><span><svg class="i" aria-hidden="true" focusable="false"><use href="#i-lock"></use></svg> Not counted in Left to spend</span><i class="cwc" aria-hidden="true"></i></div></div></div>
 </div></div>
 <div class="w manage" id="manage">
   <div class="two">
-    <div class="card g"><h3>Update card money</h3><p class="mu">Save to your card, or take some out when you need it.</p>
+    <div class="card g"><h3>Update card money</h3><p class="mu">Add money to your card or take some out.</p>
       <form id="cwForm">
-        <div class="seg" id="cwSeg" role="group" aria-label="Card action" style="--n:2"><button type="button" class="on" data-v="d">＋ Add to card</button><button type="button" data-v="w">− Take out</button><div class="glider" aria-hidden="true"></div></div>
+        <div class="seg" id="cwSeg" role="group" aria-label="Card action" style="--n:2"><button type="button" class="on" data-v="d"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-plus"></use></svg> Add to card</button><button type="button" data-v="w"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-minus"></use></svg> Take out</button><div class="glider" aria-hidden="true"></div></div>
         <label>Note (optional)<input id="cwName" maxlength="60" placeholder="e.g. Scholarship, emergency fund"></label>
         <div class="row"><label>Amount (₹)<input id="cwAmt" type="number" min="0.01" step="0.01" inputmode="decimal" placeholder="5000" required></label><label>Date<input id="cwDate" type="date" required></label></div>
         <label class="sw" id="cwMvL" hidden><input type="checkbox" id="cwMv"><span class="tk"></span><b style="font-size:15px">Also add it to my spending money</b></label>
         <button class="btn" type="submit" id="cwSub">Save to card</button>
       </form></div>
     <div class="card g"><h3>Card security</h3><p class="mu">Add a PIN to encrypt this wallet on your device. Without it, “Hide” only covers the numbers on screen.</p>
-      <div class="acts"><button class="btn alt" type="button" id="cwLk">🔒 Set PIN lock</button><button class="btn warn" type="button" id="cwRm" hidden>Remove PIN</button></div>
+      <div class="acts"><button class="btn alt" type="button" id="cwLk"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-lock"></use></svg> Set PIN lock</button><button class="btn warn" type="button" id="cwRm" hidden>Remove PIN</button></div>
       <p class="mu" style="font-size:13px;margin-top:14px">The wallet locks itself when you leave this tab. If you forget the PIN it can’t be recovered, so keep a backup.</p></div>
   </div>
   <div class="card g" style="margin-top:18px"><h3>Card history</h3><div id="cwList"></div></div>
 </div>
 </main>
-<a class="btn back g" href="index.html">⌂ Back to CampusCash</a>
+<a class="btn back g" href="index.html"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-home"></use></svg> Back to CampusCash</a>
 <dialog class="g" id="dlg" aria-labelledby="dT"><div id="dB"></div></dialog>
 <div class="toast g" id="toast" role="status"></div>
 <script>
 (()=>{
 const $=i=>document.getElementById(i);
-const {esc,money,sum,uid,toast,T,S}=CC;
+const {esc,ico,money,sum,uid,toast,T,S}=CC;
 const calm=matchMedia("(prefers-reduced-motion:reduce)").matches;
 const arr=a=>Array.isArray(a)?a.filter(x=>x&&typeof x==="object"):[];
 const save=()=>CC.save();
@@ -1293,20 +1364,20 @@ function tween(to){cancelAnimationFrame(raf);const from=shown,t0=performance.now
 function paint(){const i=Math.max(step,0),h=S.ch||locked;
   document.querySelectorAll(".step").forEach((e,k)=>e.classList.toggle("on",k===i));
   document.querySelectorAll("#dots button").forEach((e,k)=>e.classList.toggle("on",k===i));
-  if(h){cancelAnimationFrame(raf);$("cwBal").textContent=locked?"🔒 Locked":"₹ ••••••"}else tween(i>=1?cwBal():0)}
+  if(h){cancelAnimationFrame(raf);$("cwBal").innerHTML=locked?ico("lock")+" Locked":"₹ ••••••"}else tween(i>=1?cwBal():0)}
 function wal(){
   clSig=JSON.stringify(S.cl||null);
   const dep=S.cw.filter(x=>x.k==="d"),d=sum(dep),w=sum(S.cw.filter(x=>x.k==="w")),h=S.ch||locked,m=v=>h?"••••":money(v),n=dep.length;
   $("cwEye").textContent=locked?"Unlock":S.ch?"Show":"Hide";$("cwEye").setAttribute("aria-pressed",!locked&&S.ch);
   $("cw").setAttribute("aria-label",locked?"Card wallet, locked":h?"Card wallet, balance hidden":"Card wallet, balance "+money(d-w));
   $("t1").textContent=locked?"Your wallet is locked. Unlock it to see your savings.":S.cw.length?`${m(d-w)} is saved on your card, from ${n} ${n===1?"deposit":"deposits"}.`:"Nothing saved yet. Add your first deposit below.";
-  $("w1").innerHTML=locked||!S.cw.length?"":`<span class="chip">＋ In <b>${m(d)}</b></span><span class="chip">↗ Out <b>${m(w)}</b></span>`;
+  $("w1").innerHTML=locked||!S.cw.length?"":`<span class="chip">${ico("plus")} In <b>${m(d)}</b></span><span class="chip">${ico("up-right")} Out <b>${m(w)}</b></span>`;
   $("t2").textContent=S.cl?(locked?"PIN lock is on and your wallet is locked.":"PIN lock is on. Your wallet is encrypted on this device."):"Add a PIN lock below to encrypt your wallet on this device.";
-  $("w2").innerHTML=`<span class="chip">${S.cl?"🔒 Encrypted":"🔓 Not locked"}</span><span class="chip">📵 Nothing uploaded</span>`;
-  $("cwLk").textContent=!S.cl?"🔒 Set PIN lock":locked?"🔓 Unlock":"🔒 Lock now";$("cwRm").hidden=!S.cl||locked;
+  $("w2").innerHTML=`<span class="chip">${S.cl?ico("lock")+" Encrypted":ico("unlock")+" Not locked"}</span>`;
+  $("cwLk").innerHTML=!S.cl?ico("lock")+" Set PIN lock":locked?ico("unlock")+" Unlock":ico("lock")+" Lock now";$("cwRm").hidden=!S.cl||locked;
   const a=[...S.cw].sort((u,v)=>v.date.localeCompare(u.date));
   $("cwList").innerHTML=locked?'<div class="empty">Card wallet is locked. Unlock it to see your history.</div>':a.length?a.map(x=>{const i=x.k==="d",dt=new Date(x.date+"T12:00:00").toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"});
-    return `<div class="tx"><div class="ic" aria-hidden="true">${i?"💳":"↗️"}</div><div class="n"><b>${esc(x.name||(i?"Added to card":"Taken out"))}</b><span>${dt}</span></div><div class="amt ${i?"p":""}">${i?"+":"−"}${h?"••••":money(x.amount)}</div><button class="x" type="button" data-wd="${esc(x.id)}" aria-label="Delete card entry">×</button></div>`}).join(""):'<div class="empty">No card money yet. Add what you’re saving above.</div>';
+    return `<div class="tx"><div class="ic" aria-hidden="true">${ico(i?"card":"up-right")}</div><div class="n"><b>${esc(x.name||(i?"Added to card":"Taken out"))}</b><span>${dt}</span></div><div class="amt ${i?"p":""}">${i?"+":"−"}${h?"••••":money(x.amount)}</div><button class="x" type="button" data-wd="${esc(x.id)}" aria-label="Delete card entry">${ico("trash")}</button></div>`}).join(""):'<div class="empty">No card money yet. Add what you’re saving above.</div>';
   paint();
 }
 const render=()=>wal();
@@ -1324,7 +1395,7 @@ $("cwForm").onsubmit=async e=>{e.preventDefault();if(locked){unlock();return}con
   const ok=await wsave();e.target.reset();$("cwDate").value=T.today;render();
   ok&&toast(wm==="d"?`Added ${money(amount)} to your card`:mv?`Took out ${money(amount)} and added it to spending money`:`Took out ${money(amount)}`)};
 
-const ti=()=>$("theme").textContent=CC.theme.isDark()?"☀️":"🌙";ti();
+const ti=()=>$("theme").innerHTML=ico(CC.theme.isDark()?"sun":"moon");ti();
 $("theme").onclick=()=>{CC.theme.set(CC.theme.isDark()?"light":"dark");ti()};
 function onScroll(){const s=$("story"),hh=s.offsetHeight-innerHeight,p=Math.min(1,Math.max(0,-s.getBoundingClientRect().top/hh)),i=Math.min(2,Math.floor(p*3));
   $("pg").style.transform=`scaleX(${p})`;if(i!==step){step=i;paint()}}
@@ -1347,6 +1418,17 @@ wal();onScroll();
 <script>
 /* PWA: register the service worker (works on https:// or localhost, not from file://) */
 if("serviceWorker"in navigator&&/^https?:$/.test(location.protocol)){addEventListener("load",function(){navigator.serviceWorker.register("sw.js").catch(function(){})})}
+</script>
+<script id="cc-haptics">
+(()=>{
+  // lets :active press feedback work on iOS Safari
+  document.addEventListener("touchstart",()=>{},{passive:true});
+  const ok=typeof navigator.vibrate==="function"&&!matchMedia("(prefers-reduced-motion:reduce)").matches;
+  window.ccBuzz=p=>{if(!ok)return;try{navigator.vibrate(p)}catch(e){}};
+  if(!ok)return;
+  document.addEventListener("click",e=>{if(e.target.closest(".dock button,.seg button,.pill,.sw,.theme-switch,.btn.alt,.more button"))window.ccBuzz(6)},{passive:true});
+  document.addEventListener("change",e=>{if(e.target.matches&&e.target.matches("input[type=checkbox]"))window.ccBuzz(8)});
+})();
 </script>
 </body>
 </html>

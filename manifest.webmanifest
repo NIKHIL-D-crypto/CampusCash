@@ -2,7 +2,7 @@
   "id": "campuscash-pwa",
   "name": "CampusCash",
   "short_name": "CampusCash",
-  "description": "Private student money manager. Your data stays on this device.",
+  "description": "A money manager for students.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",

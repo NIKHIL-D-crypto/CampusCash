@@ -61,16 +61,17 @@
   /* ---------- constants ---------- */
 
   const CATS = [
-    ["Food", "#FFA63D", "🍱"], ["Travel", "#38B6AE", "🚌"], ["Books", "#E4577F", "📚"],
-    ["Programs", "#A66CD9", "🎟️"], ["Stationery", "#FF7A59", "✏️"],
-    ["Mobile & Internet", "#F2D16B", "📱"], ["Other", "#9C8796", "•"]
+    ["Food", "#FFA63D", "food"], ["Travel", "#38B6AE", "bus"], ["Books", "#E4577F", "book"],
+    ["Programs", "#A66CD9", "ticket"], ["Stationery", "#FF7A59", "pencil"],
+    ["Mobile & Internet", "#F2D16B", "phone"], ["Other", "#9C8796", "dots"]
   ];
-  const SRC = { Job: "💼", Family: "🏡", Other: "✨" };
+  const SRC = { Job: "briefcase", Family: "users", Other: "dots" };
   const CAT_ALIASES = { "college programs": "Programs" };   // labels from older versions
 
   /* ---------- small helpers ---------- */
 
   const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const ico = (n, c) => '<svg class="i' + (c ? " " + c : "") + '" aria-hidden="true" focusable="false"><use href="#i-' + n + '"></use></svg>';
   const pad = n => String(n).padStart(2, "0");
   const iso = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
   const money = n => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: n % 1 ? 2 : 0 }).format(n || 0);
@@ -436,7 +437,7 @@
 
   window.CC = {
     CATS, SRC, S, T,
-    esc, iso, money, r2, sum, uid, ml, pm, ago, inM, normCat,
+    esc, ico, iso, money, r2, sum, uid, ml, pm, ago, inM, normCat,
     calc, catTotals, lines, budgetFor, setBudget,
     save, replaceAll, persisted, onChange, theme, toast,
     get warn() { return warn; }
@@ -1215,9 +1216,79 @@ body::before {
 :root[data-perf="lite"] .seg{-webkit-backdrop-filter:none;backdrop-filter:none}
 :root[data-perf="lite"] .seg .glider{box-shadow:inset 0 0 8px rgba(255,255,255,.3)}
 @media (prefers-reduced-motion:reduce){.seg .glider{transition:none}}
+
+/* ===== v4.1 motion: tiny, purposeful, and off for Lite Mode / reduced motion ===== */
+/* count-up glow */
+.flash-up{animation:cc-flash-up .9s ease-out}
+.flash-down{animation:cc-flash-down .9s ease-out}
+@keyframes cc-flash-up{0%,100%{filter:drop-shadow(0 0 0 rgba(255,190,70,0))}28%{filter:drop-shadow(0 0 12px rgba(255,190,70,.95))}}
+@keyframes cc-flash-down{0%,100%{filter:drop-shadow(0 0 0 rgba(255,95,130,0))}28%{filter:drop-shadow(0 0 12px rgba(255,95,130,.9))}}
+/* entries land and leave */
+.tx-new{border-radius:16px;animation:cc-land .55s cubic-bezier(.2,.9,.25,1.12) both,cc-rowglow 1.9s ease-out .15s}
+@keyframes cc-land{from{opacity:0;transform:translateY(-14px) scale(.97)}to{opacity:1;transform:none}}
+@keyframes cc-rowglow{0%{background-color:var(--pol-glow)}100%{background-color:transparent}}
+.tx-out{height:0!important;padding-top:0!important;padding-bottom:0!important;border-bottom-width:0!important;opacity:0;transform:translateX(30px);overflow:hidden;
+  transition:height .26s cubic-bezier(.4,0,.2,1),padding .26s cubic-bezier(.4,0,.2,1),opacity .2s ease-out,transform .26s cubic-bezier(.4,0,.2,1)}
+/* save button tick */
+.btn.ok{color:transparent!important;position:relative;pointer-events:none}
+.btn.ok::after{content:"";position:absolute;left:50%;top:50%;width:.42em;height:.82em;margin:-.5em 0 0 -.21em;border:solid var(--bt);border-width:0 .17em .17em 0;border-radius:1px;transform:rotate(45deg);animation:cc-pop .5s cubic-bezier(.2,1.7,.4,1) both}
+@keyframes cc-pop{from{transform:rotate(45deg) scale(.2);opacity:0}to{transform:rotate(45deg) scale(1);opacity:1}}
+/* charts + budget */
+.bars b{transform-origin:50% 100%}
+.bar.pulse-warn{animation:cc-pulse-w 1s ease-out}
+.bar.pulse-over{animation:cc-pulse-o 1s ease-out}
+@keyframes cc-pulse-w{0%{box-shadow:0 0 0 0 rgba(255,200,87,.85)}35%{box-shadow:0 0 0 8px rgba(255,200,87,0);transform:scaleY(1.55)}100%{box-shadow:0 0 0 0 rgba(255,200,87,0);transform:none}}
+@keyframes cc-pulse-o{0%{box-shadow:0 0 0 0 rgba(255,111,107,.9)}35%{box-shadow:0 0 0 8px rgba(255,111,107,0);transform:scaleY(1.55)}100%{box-shadow:0 0 0 0 rgba(255,111,107,0);transform:none}}
+/* press feedback: a springy squeeze on everything tappable */
+.btn{transition:transform .2s cubic-bezier(.3,1.5,.5,1),filter .2s}
+.btn:active{transform:scale(.96)}
+.dock button{position:relative;z-index:1;transition:background .2s,color .2s,transform .2s cubic-bezier(.3,1.5,.5,1)}
+.dock button:active{transform:scale(.88)}
+.seg button{transition:color .3s ease-in-out,transform .2s cubic-bezier(.3,1.5,.5,1)}
+.seg button:active{transform:scale(.93)}
+.pill{transition:transform .2s cubic-bezier(.3,1.5,.5,1),background .2s,border-color .2s}
+.pill:active{transform:scale(.94)}
+.x{transition:transform .2s cubic-bezier(.3,1.5,.5,1),background .2s}
+.x:active{transform:scale(.82)}
+.sw,.theme-switch,.more button{transition:transform .2s cubic-bezier(.3,1.5,.5,1)}
+.sw:active{transform:scale(.975)}
+.theme-switch:active{transform:scale(.94)}
+.more button:active{transform:scale(.97)}
+/* dock: one glass highlight that glides between tabs */
+.dock{--gx:0px;--gw:0px}
+.dock .dock-glider{position:absolute;z-index:0;top:6px;bottom:6px;left:0;width:var(--gw);border-radius:22px;background:var(--pol-tint);
+  transform:translateX(var(--gx));opacity:0;pointer-events:none;
+  transition:transform .5s cubic-bezier(.37,1.55,.5,1),width .35s cubic-bezier(.3,.9,.3,1),opacity .2s}
+.dock.glide .dock-glider{opacity:1}
+.dock.glide.no-tr .dock-glider{transition:none}
+.dock.glide.on-plus .dock-glider{opacity:0}
+.dock.glide button.on:not(.plus){background:none}
+.dock button.plus.on{background:linear-gradient(135deg,var(--lime),#FF9F2E);color:#2A0F1F}
+/* calm modes */
+:root[data-perf="lite"] .flash-up,:root[data-perf="lite"] .flash-down,:root[data-perf="lite"] .tx-new,
+:root[data-perf="lite"] .bar.pulse-warn,:root[data-perf="lite"] .bar.pulse-over{animation:none}
+:root[data-perf="lite"] .dock .dock-glider{transition-duration:.2s;transition-timing-function:ease-out}
+@media (prefers-reduced-motion:reduce){
+  .flash-up,.flash-down,.tx-new,.bar.pulse-warn,.bar.pulse-over,.btn.ok::after{animation:none}
+  .dock .dock-glider,.dock button,.btn,.seg button,.pill,.x,.sw,.theme-switch,.more button{transition:none}
+  .tx-out{transition:none}
+}
+
+/* ===== line icons (replace emoji) ===== */
+.i{width:1.2em;height:1.2em;flex:none;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;vertical-align:-.22em;overflow:visible}
+.ic .i{width:22px;height:22px;color:var(--ac)}
+.btn,.chip,.seg button,.cwf>span{display:inline-flex;align-items:center;justify-content:center;gap:.45em}
+.btn .i,.chip .i,.seg button .i,.cwf .i,.cr .i,.pill .i{width:1.12em;height:1.12em}
+.x .i{width:19px;height:19px}
+.pill{gap:.4em}
+.hint b{display:inline-flex}
+.hint b .i{width:1em;height:1em}
+#theme .i{width:1.2em;height:1.2em;color:var(--ac)}
+#leg .i{width:1.05em;height:1.05em;color:var(--mu);margin-right:.2em}
+.safe .i{margin-right:.25em;color:var(--ac)}
 </style>
 </head>
-<body>
+<body><svg xmlns="http://www.w3.org/2000/svg" width="0" height="0" style="position:absolute;overflow:hidden" aria-hidden="true" focusable="false"><symbol id="i-food" viewBox="0 0 24 24"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/></symbol><symbol id="i-bus" viewBox="0 0 24 24"><path d="M8 6v6"/><path d="M15 6v6"/><path d="M2 12h19.6"/><path d="M18 18h3s.5-1.7.8-2.8c.1-.4.2-.8.2-1.2 0-.4-.1-.8-.2-1.2l-1.4-5C20.1 6.8 19.1 6 18 6H4a2 2 0 0 0-2 2v10h3"/><circle cx="7" cy="18" r="2"/><path d="M9 18h5"/><circle cx="16" cy="18" r="2"/></symbol><symbol id="i-book" viewBox="0 0 24 24"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></symbol><symbol id="i-ticket" viewBox="0 0 24 24"><path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z"/><path d="M13 5v2"/><path d="M13 17v2"/><path d="M13 11v2"/></symbol><symbol id="i-pencil" viewBox="0 0 24 24"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></symbol><symbol id="i-phone" viewBox="0 0 24 24"><rect width="14" height="20" x="5" y="2" rx="2" ry="2"/><path d="M12 18h.01"/></symbol><symbol id="i-dots" viewBox="0 0 24 24"><path d="M5 12h.01M12 12h.01M19 12h.01" stroke-width="3"/></symbol><symbol id="i-briefcase" viewBox="0 0 24 24"><rect width="20" height="14" x="2" y="7" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></symbol><symbol id="i-users" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></symbol><symbol id="i-chart" viewBox="0 0 24 24"><path d="M3 20h18"/><path d="M6 20v-8"/><path d="M12 20V5"/><path d="M18 20v-5"/></symbol><symbol id="i-card" viewBox="0 0 24 24"><rect width="20" height="14" x="2" y="5" rx="2"/><path d="M2 10h20"/></symbol><symbol id="i-lock" viewBox="0 0 24 24"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></symbol><symbol id="i-unlock" viewBox="0 0 24 24"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></symbol><symbol id="i-user-x" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="m17 8 5 5"/><path d="m22 8-5 5"/></symbol><symbol id="i-eye-off" viewBox="0 0 24 24"><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><path d="m2 2 20 20"/></symbol><symbol id="i-ban" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/></symbol><symbol id="i-cloud-off" viewBox="0 0 24 24"><path d="m2 2 20 20"/><path d="M5.782 5.782A7 7 0 0 0 9 19h8.5a4.5 4.5 0 0 0 1.307-.193"/><path d="M21.532 16.5A4.5 4.5 0 0 0 17.5 10h-1.79A7.008 7.008 0 0 0 10 5.07"/></symbol><symbol id="i-home" viewBox="0 0 24 24"><path d="M3 11l9-8 9 8v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/></symbol><symbol id="i-sprout" viewBox="0 0 24 24"><path d="M7 20h10"/><path d="M10 20c5.5-2.5.8-6.4 3-10"/><path d="M9.5 9.4c1.1.8 1.8 2.2 2.3 3.7-2 .4-3.5.4-4.8-.3-1.2-.6-2.3-1.9-3-4.2 2.8-.5 4.4 0 5.5.8z"/><path d="M14.1 6a7 7 0 0 0-1.1 4c1.9-.1 3.3-.6 4.3-1.4 1-1 1.6-2.3 1.7-4.6-2.7.1-4 1-4.9 2z"/></symbol><symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></symbol><symbol id="i-down" viewBox="0 0 24 24"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></symbol><symbol id="i-up-right" viewBox="0 0 24 24"><path d="M7 17 17 7"/><path d="M7 7h10v10"/></symbol><symbol id="i-plus" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></symbol><symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol><symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><path d="M10 11v6"/><path d="M14 11v6"/></symbol><symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></symbol><symbol id="i-moon" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></symbol><symbol id="i-shield" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></symbol></svg>
 <div class="bg" aria-hidden="true"><i></i><i></i><i></i></div>
 
 <header class="top g">
@@ -1233,31 +1304,31 @@ body::before {
     <div class="mu" id="dSub"></div>
     <div class="s2"><div class="stat g cf" id="dCar" hidden><span class="mu">Carried over<small style="display:block">from earlier months</small></span><div class="num" id="dCarV"></div></div><div class="stat g"><span class="mu">Money in</span><div class="num" id="dInc"></div></div><div class="stat g"><span class="mu">Money out</span><div class="num" id="dExp"></div></div></div>
     <div id="dBud" hidden style="margin-top:var(--sp-14)"><b id="dBudT"></b><div class="bar"><span id="dBar" style="width:0"></span></div></div>
-    <div class="acts"><button class="btn" type="button" data-q="exp">Add expense</button><button class="btn alt" type="button" data-q="inc">Add income</button><button class="btn alt" type="button" id="demo" hidden>Load sample data (optional)</button></div>
-    <a class="btn ovb" id="ovl2" href="overview.html">✦ See your month overview</a>
-    <a class="btn alt ovb" href="wallet.html">💳 Open card wallet</a>
+    <div class="acts"><button class="btn" type="button" data-q="exp">Add expense</button><button class="btn alt" type="button" data-q="inc">Add income</button><button class="btn alt" type="button" id="demo" hidden>Load sample data</button></div>
+    <a class="btn ovb" id="ovl2" href="overview.html"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-chart"></use></svg> See your month overview</a>
+    <a class="btn alt ovb" href="wallet.html"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-card"></use></svg> Open card wallet</a>
   </div>
   <div class="card g" style="margin-top:var(--sp-18)"><h3>Recent entries</h3><div id="recent"></div>
     <div class="acts"><button class="btn alt" type="button" data-go="activity">All activity</button><button class="btn alt" type="button" data-go="insights">Analytics</button><a class="btn alt" id="ovl" href="overview.html">Overview story</a></div></div>
-  <div class="card g" style="margin-top:var(--sp-18)"><h3>Monthly recap</h3><p class="mu">A summary of the selected month, whenever you want it.</p>
+  <div class="card g" style="margin-top:var(--sp-18)"><h3>Monthly recap</h3><p class="mu">A summary of the selected month.</p>
     <div class="acts"><button class="btn alt" type="button" id="rOpen">Open recap</button></div>
     <label class="sw" style="margin-top:var(--sp-16)"><input type="checkbox" id="rAuto"><span class="tk"></span><b>Show recap each new month</b></label></div>
 </div></section>
 
 <section class="s" id="add"><div class="w">
-  <div class="head"><h2>Add money in, or out.</h2><p class="lead">Income from a job or home sits next to your spending, so the balance is always honest.</p></div>
+  <div class="head"><h2>Add an entry</h2><p class="lead">Income and spending both count toward Left to spend.</p></div>
   <div class="two">
     <div class="card g">
-      <h3 id="cInc">Add income</h3><p class="mu">Pay, allowance, scholarship, gifts.</p>
+      <h3 id="cInc">Add income</h3>
       <form id="incForm">
-        <div class="seg" id="srcSeg" role="group" aria-label="Income source" style="--n:3"><button type="button" class="on" data-v="Job">💼 Job</button><button type="button" data-v="Family">🏡 Family</button><button type="button" data-v="Other">✨ Other</button><div class="glider" aria-hidden="true"></div></div>
+        <div class="seg" id="srcSeg" role="group" aria-label="Income source" style="--n:3"><button type="button" class="on" data-v="Job"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-briefcase"></use></svg> Job</button><button type="button" data-v="Family"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-users"></use></svg> Family</button><button type="button" data-v="Other"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-dots"></use></svg> Other</button><div class="glider" aria-hidden="true"></div></div>
         <label>Label (optional)<input id="incName" maxlength="60" placeholder="e.g. Cafe shift, pocket money"></label>
         <div class="row"><label>Amount (₹)<input id="incAmt" type="number" min="0.01" step="0.01" inputmode="decimal" placeholder="2000" required></label><label>Date<input id="incDate" type="date" required></label></div>
         <button class="btn" type="submit">Save income</button>
       </form>
     </div>
     <div class="card g">
-      <h3 id="cExp">Add expense</h3><p class="mu">Every small spend counts.</p>
+      <h3 id="cExp">Add expense</h3>
       <form id="expForm">
         <label>What did you spend on?<input id="expName" maxlength="70" placeholder="e.g. College lunch, bus ticket" required></label>
         <div class="row"><label>Amount (₹)<input id="expAmt" type="number" min="0.01" step="0.01" inputmode="decimal" placeholder="120" required></label><label>Category<select id="expCat"></select></label></div>
@@ -1269,7 +1340,7 @@ body::before {
 </div></section>
 
 <section class="s" id="insights"><div class="w">
-  <div class="head"><h2>Your month, at a glance.</h2></div>
+  <div class="head"><h2>Analytics</h2></div>
   <div class="stats">
     <div class="stat g"><span class="mu">Daily average</span><div class="num" id="sAvg">₹0</div></div>
     <div class="stat g"><span class="mu">Biggest category</span><div class="num" id="sTop">—</div></div>
@@ -1284,7 +1355,7 @@ body::before {
 </div></section>
 
 <section class="s" id="activity"><div class="w">
-  <div class="head"><h2>Everything you’ve logged.</h2></div>
+  <div class="head"><h2>Activity</h2></div>
   <div class="card g">
     <div class="seg" id="filt" role="group" aria-label="Filter activity" style="max-width:var(--sp-340);--n:3"><button type="button" class="on" data-v="all">All</button><button type="button" data-v="i">Income</button><button type="button" data-v="e">Spending</button><div class="glider" aria-hidden="true"></div></div>
     <div class="srch"><input id="q" type="search" maxlength="60" placeholder="Search entries" aria-label="Search entries"><div class="row"><select id="srt" aria-label="Sort entries"><option value="n">Newest first</option><option value="o">Oldest first</option><option value="h">Highest amount</option><option value="l">Lowest amount</option></select><select id="fc" aria-label="Filter by category"><option value="">All categories</option></select></div></div>
@@ -1293,10 +1364,10 @@ body::before {
 </div></section>
 
 <section class="s" id="budget"><div class="w">
-  <div class="head"><h2>Set a budget, if it helps.</h2><p class="lead">Totally optional. Turn it on to pace your spending against a monthly limit.</p></div>
+  <div class="head"><h2>Budget</h2><p class="lead">Set a monthly spending limit and see how much of it you’ve used.</p></div>
   <div class="card g">
     <label class="sw"><input type="checkbox" id="bOn"><span class="tk"></span><b>Use a monthly budget</b></label>
-    <p class="mu" id="bOff" style="margin-top:var(--sp-16)">Budget is off. Your balance is simply income minus spending.</p>
+    <p class="mu" id="bOff" style="margin-top:var(--sp-16)">Budget is off. Left to spend is income minus spending.</p>
     <div id="bBody" hidden style="margin-top:var(--sp-18)">
       <div style="display:flex;justify-content:space-between;gap:var(--sp-10);flex-wrap:wrap"><b id="bSpent" style="font-size:var(--fs-20)"></b><span class="mu" id="bSt"></span></div>
       <div class="bar"><span id="bBar" style="width:0"></span></div>
@@ -1304,19 +1375,17 @@ body::before {
       <form id="bForm" style="grid-template-columns:1fr auto;align-items:end"><label>Monthly budget (₹)<input id="bAmt" type="number" min="1" step="1" inputmode="numeric" required></label><button class="btn" type="submit">Update</button></form>
     </div>
     <div style="margin-top:var(--sp-26);border-top:var(--sp-1) solid var(--color-glass-border);padding-top:var(--sp-20)"><label class="sw"><input type="checkbox" id="coOn"><span class="tk"></span><b>Carry my balance into each new month</b></label><p class="mu" id="coNote" style="font-size:var(--fs-14);margin-top:var(--sp-8)"></p></div>
-    <div style="margin-top:var(--sp-26);border-top:var(--sp-1) solid var(--color-glass-border);padding-top:var(--sp-20)"><h3>Back up your data</h3><p class="mu" style="font-size:var(--fs-14);margin-top:var(--sp-6)">Your data lives only on this device. Save a copy to keep it safe or move it to a new phone.</p><div class="acts"><button class="btn alt" type="button" id="exJ">Export backup</button><button class="btn alt" type="button" id="exC">Export CSV</button><button class="btn alt" type="button" id="imp">Import backup</button></div><input type="file" id="impF" accept="application/json,.json" hidden></div>
-    <div style="margin-top:var(--sp-26);border-top:var(--sp-1) solid var(--color-glass-border);padding-top:var(--sp-20)"><button class="btn warn" id="wipe" type="button">Erase all my data</button><p class="mu" style="font-size:var(--fs-13);margin-top:var(--sp-8)">Removes every income, expense and card wallet entry saved on this device.</p></div>
+    <div style="margin-top:var(--sp-26);border-top:var(--sp-1) solid var(--color-glass-border);padding-top:var(--sp-20)"><h3>Back up your data</h3><p class="mu" style="font-size:var(--fs-14);margin-top:var(--sp-6)">Save a copy to keep your entries safe or move them to a new phone.</p><div class="acts"><button class="btn alt" type="button" id="exJ">Export backup</button><button class="btn alt" type="button" id="exC">Export CSV</button><button class="btn alt" type="button" id="imp">Import backup</button></div><input type="file" id="impF" accept="application/json,.json" hidden></div>
+    <div style="margin-top:var(--sp-26);border-top:var(--sp-1) solid var(--color-glass-border);padding-top:var(--sp-20)"><button class="btn warn" id="wipe" type="button">Erase all my data</button><p class="mu" style="font-size:var(--fs-13);margin-top:var(--sp-8)">Deletes every income, expense and card wallet entry. This can’t be undone.</p></div>
   </div>
 </div></section>
 
 <section class="s about" id="about"><div class="w">
   <div class="head"><h2>About CampusCash</h2></div>
   <div class="card g" style="padding:clamp(var(--sp-22),4vw,var(--sp-40))">
-    <p>CampusCash is a small money manager made for students. Add what comes in from a job or home, log what you spend, and see what’s left, month by month.</p>
-    <p>Everything is saved only in this browser, on this device. There are no accounts, no ads, and nothing is uploaded. This is not a cloud backup: clearing site data or switching devices removes your entries.</p>
-    <p>Budgets are optional. Use one if a limit helps you, and ignore it if it doesn’t.</p>
-    <p><b style="color:var(--color-text)">Your privacy comes first.</b> We don’t collect your data: no sign-up, no analytics, no trackers, no cookies, no ads. Your entries, budget and card wallet live only in this browser’s storage and are never sent to us or anyone else. The only thing that ever leaves your device is a suggestion you choose to send by email. “Hide” on the card wallet only covers the numbers on screen. For real protection, turn on the PIN lock, which encrypts the wallet on this device. A strict security policy also stops this page from connecting anywhere else.</p>
-    <div class="acts"><span class="pill">🔒 No accounts</span><span class="pill">🚫 No tracking</span><span class="pill">📵 No ads</span><span class="pill">📤 Nothing uploaded</span></div>
+    <p>CampusCash is a money manager for students. Add your income, log what you spend, and see what’s left each month.</p>
+    <p>Everything is stored in this browser, on this device. Clearing site data or switching devices removes your entries, so export a backup if you want to keep them. A browser security policy also stops this page from connecting to other servers.</p>
+            <div class="acts"><span class="pill"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-user-x"></use></svg> No accounts</span><span class="pill"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-eye-off"></use></svg> No tracking</span><span class="pill"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-ban"></use></svg> No ads</span><span class="pill"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-cloud-off"></use></svg> Nothing uploaded</span></div>
     <p style="font-size:var(--fs-14)">CampusCash <b data-ver></b>. Card wallet money never counts toward Left to spend or your budget.</p>
   </div>
 </div></section>
@@ -1332,7 +1401,7 @@ body::before {
   </div>
 </div></section>
 </main>
-<footer>Made for students. Your data stays on this device.<br>CampusCash <span data-ver></span></footer>
+<footer>CampusCash <span data-ver></span></footer>
 
 <nav class="dock g" aria-label="Sections">
   <button type="button" data-go="dash" class="on"><b aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 11l9-8 9 8v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/></svg></b>Home</button>
@@ -1349,8 +1418,37 @@ body::before {
 <script>
 (()=>{
 const $=i=>document.getElementById(i);
-const {CATS,SRC,esc,money,uid,ago,ml,pm,catTotals,calc,lines,setBudget,theme,toast,T,S}=CC;
+const {CATS,SRC,ico,esc,money,uid,ago,ml,pm,catTotals,calc,lines,setBudget,theme,toast,T,S}=CC;
 const calm=matchMedia("(prefers-reduced-motion:reduce)").matches;
+/* ---- motion helpers: count-up numbers, chart draw-in, save tick, budget pulse (all skipped for Lite Mode and reduced motion) ---- */
+const isLite=()=>document.documentElement.dataset.perf==="lite",fxOn=()=>!calm&&!isLite();
+const buzz=p=>{try{window.ccBuzz&&window.ccBuzz(p)}catch(e){}};
+let noFlash=false,fresh=null,prevSt;
+const cuRun=(el,from,to,dur,tone)=>{
+  if(tone&&!noFlash){el.classList.remove("flash-up","flash-down");void el.offsetWidth;el.classList.add("flash-"+tone)}
+  const t0=performance.now(),ease=t=>1-Math.pow(1-t,3);
+  const step=now=>{const t=Math.min(1,(now-t0)/dur),cur=from+(to-from)*ease(t);
+    el._c=t<1?cur:to;el.textContent=money(t<1?Math.round(cur):to);
+    if(t<1)el._r=requestAnimationFrame(step);else if(tone)setTimeout(()=>el.classList.remove("flash-up","flash-down"),600)};
+  el._r=requestAnimationFrame(step)};
+const cuNum=(id,v,tone)=>{const el=$(id);if(!el)return;const to=+v||0,first=el._c===undefined,from=first?0:el._c;cancelAnimationFrame(el._r);
+  if(!fxOn()||(!first&&from===to)||(first&&to===0)){el._c=to;el.textContent=money(to);return}
+  const t=first?null:tone==="auto"?(to>from?"up":"down"):tone;
+  cuRun(el,from,to,first?750:Math.min(900,400+Math.min(1,Math.abs(to-from)/Math.max(1,Math.abs(to)))*420),t)};
+const chVis={},chDirty={},chPlay={
+  donut(){const cs=[...$("donut").querySelectorAll("circle")].slice(1);let cum=0;
+    cs.forEach(c=>{const p=parseFloat(c.getAttribute("stroke-dasharray"))||0;
+      c.animate([{strokeDasharray:"0 100"},{strokeDasharray:p+" "+(100-p)}],{duration:240+p*4.6,delay:cum*5.2,easing:"cubic-bezier(.3,.7,.2,1)",fill:"backwards"});cum+=p})},
+  bars(){[...$("bars").children].forEach((b,i)=>b.animate([{transform:"scaleY(0)"},{transform:"scaleY(1)"}],{duration:540,delay:Math.min(i*18,520),easing:"cubic-bezier(.2,.9,.3,1.08)",fill:"backwards"}))},
+  bBar(){const b=$("bBar"),w=b.style.width||"0%";b.animate([{width:"0%"},{width:w}],{duration:750,easing:"cubic-bezier(.2,.85,.25,1)"})}
+};
+const chFlush=id=>{if(!chDirty[id])return;chDirty[id]=false;if(fxOn())chPlay[id]()};
+const chMark=id=>{chDirty[id]=true;if(chVis[id])chFlush(id)};
+const chIO=new IntersectionObserver(es=>es.forEach(e=>{const id=e.target.dataset.cc;chVis[id]=e.isIntersecting;if(e.isIntersecting)chFlush(id)}),{threshold:.35});
+[["donut",$("donut")],["bars",$("bars")],["bBar",$("bBar").parentElement]].forEach(([id,el])=>{el.dataset.cc=id;chIO.observe(el)});
+const budPulse=st=>{if(!fxOn())return;["bBar","dBar"].forEach(i=>{const bar=$(i).parentElement;bar.classList.remove("pulse-warn","pulse-over");void bar.offsetWidth;bar.classList.add(st>1?"pulse-over":"pulse-warn");setTimeout(()=>bar.classList.remove("pulse-warn","pulse-over"),1000)});buzz(st>1?[24,60,24]:14)};
+const okPop=f=>{const b=f&&f.querySelector&&f.querySelector("button[type=submit]");if(!b||!fxOn())return;b.classList.remove("ok");void b.offsetWidth;b.classList.add("ok");setTimeout(()=>b.classList.remove("ok"),1100)};
+
 let month=T.month,src="Job",filt="all",C,seenDay=T.today,seenMonth=T.month;
 const save=opts=>CC.save(opts);
 const months=()=>{const s=new Set([T.month,month]);S.inc.concat(S.exp).forEach(x=>s.add(x.date.slice(0,7)));return[...s].sort().reverse()};
@@ -1359,11 +1457,11 @@ function render(){
   C=calc(month);const c=C,cats=catTotals(c.ee),LN=lines(c);
   $("month").innerHTML=months().map(k=>`<option value="${k}"${k===month?" selected":""}>${ml(k)}</option>`).join("");
   const n=c.ie.length+c.ee.length;
-  $("dLab").textContent=`Left to spend, ${ml(month)}`;$("dBal").textContent=money(c.bal);$("dBal").classList.toggle("neg",c.bal<0);
+  $("dLab").textContent=`Left to spend, ${ml(month)}`;cuNum("dBal",c.bal,"auto");$("dBal").classList.toggle("neg",c.bal<0);
   const sub=$("dSub");sub.textContent="";
   if(n||c.open)[LN.balance,LN.budget].filter(Boolean).forEach(t=>{const p=document.createElement("p");p.textContent=t;sub.append(p)});
   else sub.textContent=`Nothing added for ${ml(month)} yet. Add a job or family income below.`;
-  $("dCar").hidden=!(S.co&&c.prior);$("dCarV").textContent=money(c.open);$("dCarV").classList.toggle("neg",c.open<0);$("dInc").textContent=money(c.inc);$("dExp").textContent=money(c.sp);
+  $("dCar").hidden=!(S.co&&c.prior);cuNum("dCarV",c.open,"auto");$("dCarV").classList.toggle("neg",c.open<0);cuNum("dInc",c.inc,"up");cuNum("dExp",c.sp,"down");
   $("demo").hidden=S.inc.length+S.exp.length>0;$("ovl").href=$("ovl2").href="overview.html#"+month;
   const rc=[...c.ie.map(x=>({...x,k:"i"})),...c.ee.map(x=>({...x,k:"e"}))].sort((u,v)=>v.date.localeCompare(u.date)).slice(0,4);
   $("recent").innerHTML=rc.length?rc.map(x=>row(x)).join(""):'<div class="empty">Nothing here yet. Add income or an expense.</div>';
@@ -1371,16 +1469,16 @@ function render(){
   // donut
   let cum=0;
   $("donut").innerHTML='<circle cx="21" cy="21" r="15.915" fill="none" stroke="var(--color-field)" stroke-width="5"/>'+cats.map(x=>{const p=x.t/c.sp*100,s=`<circle cx="21" cy="21" r="15.915" fill="none" stroke="${x.c}" stroke-width="5" stroke-dasharray="${p} ${100-p}" stroke-dashoffset="${25-cum}"><title>${esc(x.n)}: ${money(x.t)}</title></circle>`;cum+=p;return s}).join("");
-  $("leg").innerHTML=cats.length?cats.map(x=>`<div><i style="background:${x.c}"></i><span>${x.i} ${esc(x.n)}</span><b>${Math.round(x.t/c.sp*100)}%</b></div>`).join(""):'<p class="mu">Log an expense to see where it goes.</p>';
+  $("leg").innerHTML=cats.length?cats.map(x=>`<div><i style="background:${x.c}"></i><span>${ico(x.i)} ${esc(x.n)}</span><b>${Math.round(x.t/c.sp*100)}%</b></div>`).join(""):'<p class="mu">Log an expense to see where it goes.</p>';
   $("donut").setAttribute("aria-label",cats.length?"Spending by category: "+cats.map(x=>`${x.n} ${money(x.t)}`).join(", "):"No spending logged this month");
   // bars
   const L=Math.min(c.dim,Math.max(c.el,...c.ee.map(e=>+e.date.slice(8,10)))),days=Array(L).fill(0);c.ee.forEach(e=>{const d=+e.date.slice(8,10);if(d>=1&&d<=L)days[d-1]+=+e.amount});
   const mx=Math.max(1,...days);
   $("bars").innerHTML=days.map((v,i)=>`<b class="${v?"":"z"}" style="height:${v?Math.max(6,v/mx*100):3}%" title="Day ${i+1}: ${money(v)}"></b>`).join("");
   $("endDay").textContent="Day "+L;const pk=days.indexOf(Math.max(...days));$("bars").setAttribute("aria-label",c.sp>0&&days[pk]>0?`Daily spending. Highest day is day ${pk+1} at ${money(days[pk])}.`:"No spending logged this month.");
-  list();
+  chMark("donut");chMark("bars");list();
   // budget
-  $("coOn").checked=S.co;$("coNote").textContent=S.co?"What’s left at the end of a month rolls into the next one, so your balance never resets. Budgets still start fresh each month.":"Each month starts from zero. Money left over is not added to the next month.";$("bOn").checked=S.bOn;$("bBody").hidden=!S.bOn;$("bOff").hidden=S.bOn;$("dBud").hidden=!S.bOn;
+  $("coOn").checked=S.co;$("coNote").textContent=S.co?"Money left at the end of a month is added to the next month. Budgets still start fresh each month.":"Each month starts from zero. Money left over is not added to the next month.";$("bOn").checked=S.bOn;$("bBody").hidden=!S.bOn;$("bOff").hidden=S.bOn;$("dBud").hidden=!S.bOn;
   if(S.bOn){
     const bud=c.budget,left=bud-c.sp,pct=bud>0?c.sp/bud*100:(c.sp?100:0);
     const bt=`${money(c.sp)} of ${money(bud)} spent`,bs=pct>100?"Over budget":pct>80?"Close to the limit":"On track";
@@ -1388,10 +1486,11 @@ function render(){
     ["bBar","dBar"].forEach(i=>{$(i).style.width=Math.min(100,pct)+"%";$(i).style.background=pct>100?"var(--color-danger)":pct>80?"var(--color-warning)":"var(--color-accent)"});
     $("bNote").textContent=left<0?`You’re ${money(-left)} over budget.`:c.cur&&c.rem>0?`Stay under ${money(Math.floor(left/c.rem))} a day to finish within budget.`:`${money(left)} under budget.`;
     $("bAmt").value=bud;
-  }
+    const st=pct>100?2:pct>80?1:0;if(prevSt!==undefined&&st>prevSt&&!noFlash)budPulse(st);prevSt=st;if($("bBar")._p!==pct){$("bBar")._p=pct;chMark("bBar")}
+  }else prevSt=undefined;
 }
-const row=(x,tools)=>{const inc=x.k==="i",d=new Date(x.date+"T12:00:00").toLocaleDateString("en-IN",{day:"numeric",month:"short"}),ic=inc?SRC[x.source]||"✨":(CATS.find(k=>k[0]===x.category)||[0,0,"•"])[2],nm=esc(x.name||(inc?x.source+" income":x.category));
-  return `<div class="tx"><div class="ic" aria-hidden="true">${ic}</div><div class="n"><b>${nm}</b><span>${d}, ${esc(inc?x.source+" income":x.category)}</span></div><div class="amt ${inc?"p":""}">${inc?"+":"−"}${money(x.amount)}</div>${tools?`<button class="x" type="button" data-a="ed" data-k="${x.k}" data-id="${esc(x.id)}" aria-label="Edit ${nm}">✎</button><button class="x" type="button" data-a="del" data-k="${x.k}" data-id="${esc(x.id)}" aria-label="Delete ${nm}">×</button>`:""}</div>`};
+const row=(x,tools)=>{const inc=x.k==="i",d=new Date(x.date+"T12:00:00").toLocaleDateString("en-IN",{day:"numeric",month:"short"}),ic=ico(inc?SRC[x.source]||"dots":(CATS.find(k=>k[0]===x.category)||[0,0,"dots"])[2]),nm=esc(x.name||(inc?x.source+" income":x.category));
+  return `<div class="tx${x.id===fresh?" tx-new":""}" data-rid="${esc(x.id)}"><div class="ic" aria-hidden="true">${ic}</div><div class="n"><b>${nm}</b><span>${d}, ${esc(inc?x.source+" income":x.category)}</span></div><div class="amt ${inc?"p":""}">${inc?"+":"−"}${money(x.amount)}</div>${tools?`<button class="x" type="button" data-a="ed" data-k="${x.k}" data-id="${esc(x.id)}" aria-label="Edit ${nm}">${ico("pencil")}</button><button class="x" type="button" data-a="del" data-k="${x.k}" data-id="${esc(x.id)}" aria-label="Delete ${nm}">${ico("trash")}</button>`:""}</div>`};
 function list(){
   const c=C,q=$("q").value.trim().toLowerCase(),fc=$("fc").value,so=$("srt").value;
   const a=[...c.ie.map(x=>({...x,k:"i"})),...c.ee.map(x=>({...x,k:"e"}))].filter(x=>(filt==="all"||x.k===filt)&&(!fc||x.category===fc)&&(!q||(x.name+" "+(x.category||x.source)).toLowerCase().includes(q)))
@@ -1402,15 +1501,21 @@ const dlg=$("dlg"),show=h=>{$("dB").innerHTML=h;if(!dlg.open)dlg.showModal()};
 dlg.addEventListener("click",e=>{if(e.target===dlg||e.target.closest("[data-x]"))dlg.close()});
 function edit(k,id){
   const x=S[k==="i"?"inc":"exp"].find(y=>y.id===id);if(!x)return;
-  const o=k==="i"?Object.keys(SRC).map(s=>[s,SRC[s]+" "+s]):CATS.map(c=>[c[0],c[2]+" "+c[0]]),cur=k==="i"?(SRC[x.source]?x.source:"Other"):CC.normCat(x.category);
+  const o=k==="i"?Object.keys(SRC).map(s=>[s,s]):CATS.map(c=>[c[0],c[0]]),cur=k==="i"?(SRC[x.source]?x.source:"Other"):CC.normCat(x.category);
   show(`<h3 id="dT">Edit ${k==="i"?"income":"expense"}</h3><form id="eF"><label>${k==="i"?"Label (optional)":"What did you spend on?"}<input name="n" maxlength="70" value="${esc(x.name)}"${k==="e"?" required":""}></label><div class="row"><label>Amount (₹)<input name="a" type="number" min="0.01" step="0.01" inputmode="decimal" value="${x.amount}" required></label><label>Date<input name="d" type="date" value="${x.date}" required></label></div><label>${k==="i"?"Source":"Category"}<select name="c">${o.map(v=>`<option value="${esc(v[0])}"${v[0]===cur?" selected":""}>${esc(v[1])}</option>`).join("")}</select></label><div class="acts"><button class="btn" type="submit">Save changes</button><button class="btn alt" type="button" data-x>Cancel</button></div></form>`);
   $("eF").onsubmit=e=>{e.preventDefault();const f=e.target,v=+f.a.value;if(!(v>0)||!f.d.value){toast("Enter an amount above zero and a date.",0,1);return}
     const x=S[k==="i"?"inc":"exp"].find(y=>y.id===id);if(!x){dlg.close();render();toast("That entry was changed in another tab.",0,1);return}
     x.name=f.n.value.trim()||(k==="i"?f.c.value+" income":x.name);x.amount=v;x.date=f.d.value;if(k==="i")x.source=f.c.value;else x.category=f.c.value;
-    const ok=save();dlg.close();render();if(ok)toast(x.date.slice(0,7)===month?"Changes saved":`Saved. It now counts in ${ml(x.date.slice(0,7))}.`)};
+    const ok=save();dlg.close();fresh=x.id;render();fresh=null;if(ok)buzz(12);if(ok)toast(x.date.slice(0,7)===month?"Changes saved":`Saved. It now counts in ${ml(x.date.slice(0,7))}.`)};
 }
-function del(k,id){const key=k==="i"?"inc":"exp",i=S[key].findIndex(x=>x.id===id);if(i<0)return;const[x]=S[key].splice(i,1),ok=save();render();
-  if(ok)toast("Entry deleted",["Undo",()=>{S[key].splice(Math.min(i,S[key].length),0,x);save();render()}])}
+function del(k,id){const key=k==="i"?"inc":"exp";if(S[key].findIndex(x=>x.id===id)<0)return;
+  const rows=fxOn()?[...document.querySelectorAll('.tx[data-rid="'+CSS.escape(id)+'"]')]:[];
+  const go=()=>{const i=S[key].findIndex(x=>x.id===id);if(i<0)return;const[x]=S[key].splice(i,1),ok=save();render();
+    if(ok){buzz(16);toast("Entry deleted",["Undo",()=>{S[key].splice(Math.min(i,S[key].length),0,x);save();render()}])}};
+  if(!rows.length){go();return}
+  if(rows[0].classList.contains("tx-out"))return;
+  rows.forEach(r=>{r.style.height=r.offsetHeight+"px";void r.offsetHeight;r.classList.add("tx-out")});
+  setTimeout(go,270)}
 function recap(m){
   const r=calc(m),p=calc(pm(m)),n=r.ie.length+r.ee.length,top=catTotals(r.ee)[0],big=r.ee.reduce((a,x)=>x.amount>(a?a.amount:0)?x:a,null),kv=(k,v)=>`<div><span class="mu">${k}</span><b>${v}</b></div>`;
   let h=`<h3 id="dT">${r.cur?"So far in "+ml(m):"Your "+ml(m)+" recap"}</h3>`;
@@ -1434,22 +1539,38 @@ document.addEventListener("click",e=>{
   else if(d.m){month=d.m;dlg.close();render();go("dash")}
 });
 const dm={insights:"more",about:"more",contact:"more"};
-const io=new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting){const id=dm[e.target.id]||e.target.id;document.querySelectorAll(".dock button").forEach(b=>b.classList.toggle("on",b.dataset.go===id))}}),{rootMargin:"-45% 0px -54% 0px"});
+/* ---- dock: sliding indicator + icon bounce + spinning plus ---- */
+let ccLock=null;
+const dock=document.querySelector(".dock"),dgl=document.createElement("i");dgl.className="dock-glider";dgl.setAttribute("aria-hidden","true");dock.prepend(dgl);
+const dockPlace=inst=>{const on=dock.querySelector("button.on");if(!on){dock.classList.remove("glide");return}
+  if(inst)dock.classList.add("no-tr");
+  dock.style.setProperty("--gx",on.offsetLeft+"px");dock.style.setProperty("--gw",on.offsetWidth+"px");
+  dock.classList.add("glide");dock.classList.toggle("on-plus",on.classList.contains("plus"));
+  if(inst){void dock.offsetWidth;dock.classList.remove("no-tr")}};
+const dockSet=id=>{dock.querySelectorAll("button").forEach(b=>{const was=b.classList.contains("on"),is=b.dataset.go===id;b.classList.toggle("on",is);
+  if(is&&!was&&fxOn()&&b.firstElementChild)b.firstElementChild.animate([{transform:"translateY(0) scale(1)"},{transform:"translateY(-5px) scale(1.2)"},{transform:"translateY(0) scale(1)"}],{duration:420,easing:"cubic-bezier(.3,1.6,.5,1)"})});dockPlace()};
+dock.addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;
+  if(b.classList.contains("plus")&&fxOn()&&b.firstElementChild)b.firstElementChild.animate([{transform:"rotate(0) scale(1)"},{transform:"rotate(180deg) scale(1.3)"},{transform:"rotate(180deg) scale(1)"}],{duration:520,easing:"cubic-bezier(.3,1.5,.4,1)"});
+  const g=b.dataset.go;if(g&&g!=="more"){ccLock=g;dockSet(g);settle(()=>{ccLock=null})}});
+if("ResizeObserver" in window)new ResizeObserver(()=>dockPlace(true)).observe(dock);
+requestAnimationFrame(()=>dockPlace(true));addEventListener("load",()=>dockPlace(true));
+if(document.fonts&&document.fonts.ready)document.fonts.ready.then(()=>dockPlace(true));
+const io=new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting){const id=dm[e.target.id]||e.target.id;if(!ccLock||id===ccLock)dockSet(id)}}),{rootMargin:"-45% 0px -54% 0px"});
 document.querySelectorAll("main section").forEach(s=>io.observe(s));
 // setup
-const VER="4.0.2";addEventListener("pageshow",e=>{if(e.persisted)location.reload()});document.querySelectorAll("[data-ver]").forEach(e=>e.textContent="v"+VER);
+const VER="4.2.1";addEventListener("pageshow",e=>{if(e.persisted)location.reload()});document.querySelectorAll("[data-ver]").forEach(e=>e.textContent="v"+VER);
 $("expCat").innerHTML=CATS.map(c=>`<option>${esc(c[0])}</option>`).join("");
 $("incDate").value=$("expDate").value=T.today;
 const ti=()=>{const d=theme.isDark();$("theme").checked=!d;$("theme").setAttribute("aria-label",d?"Use light theme":"Use dark theme")};ti();
 $("theme").onchange=()=>{theme.set($("theme").checked?"light":"dark");ti()};
-$("month").onchange=e=>{month=e.target.value;render()};
+$("month").onchange=e=>{month=e.target.value;noFlash=true;render();noFlash=false};
 const seg=(id,fn)=>{const g=$(id);g.onclick=e=>{const b=e.target.closest("button");if(!b)return;const bs=[...g.querySelectorAll("button")];bs.forEach(x=>x.classList.toggle("on",x===b));g.style.setProperty("--i",bs.indexOf(b));fn(b.dataset.v)}};
 seg("srcSeg",v=>src=v);seg("filt",v=>{filt=v;list()});
 const jump=d=>{month=d.slice(0,7);$("month").value=month};
 $("incForm").onsubmit=e=>{e.preventDefault();const amount=+$("incAmt").value,date=$("incDate").value;if(!(amount>0)||!date)return;
-  S.inc.push({id:uid(),name:$("incName").value.trim()||src+" income",source:src,amount,date});const ok=save();jump(date);e.target.reset();$("incDate").value=T.today;render();ok&&toast(`Added ${money(amount)} income`)};
+  const nid=uid();S.inc.push({id:nid,name:$("incName").value.trim()||src+" income",source:src,amount,date});const ok=save();jump(date);e.target.reset();$("incDate").value=T.today;fresh=nid;render();fresh=null;if(ok){okPop(e.target);buzz(14);toast(`Added ${money(amount)} income`)}};
 $("expForm").onsubmit=e=>{e.preventDefault();const amount=+$("expAmt").value,date=$("expDate").value,name=$("expName").value.trim();if(!(amount>0)||!date||!name)return;
-  S.exp.push({id:uid(),name,amount,category:$("expCat").value,date});const ok=save();jump(date);e.target.reset();$("expDate").value=T.today;render();ok&&toast(`Added ${money(amount)} expense`)};
+  const nid=uid();S.exp.push({id:nid,name,amount,category:$("expCat").value,date});const ok=save();jump(date);e.target.reset();$("expDate").value=T.today;fresh=nid;render();fresh=null;if(ok){okPop(e.target);buzz(14);toast(`Added ${money(amount)} expense`)}};
 const dl=(n,t,x)=>{const a=document.createElement("a"),u=URL.createObjectURL(new Blob([x],{type:t}));a.href=u;a.download=n;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),4000)};
 $("exJ").onclick=()=>{dl("campuscash-backup-"+T.today+".json","application/json",JSON.stringify({app:"CampusCash",version:VER,data:CC.persisted()},null,1));toast("Backup file created")};
 const cs=v=>{v=String(v);if(/^[=+\-@\t\r]/.test(v))v="'"+v;return /[",\n\r]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v};
@@ -1498,6 +1619,17 @@ render();if(CC.warn)toast(CC.warn,0,1);else setTimeout(autoRecap,400);
 <script>
 /* PWA: register the service worker (works on https:// or localhost, not from file://) */
 if("serviceWorker"in navigator&&/^https?:$/.test(location.protocol)){addEventListener("load",function(){navigator.serviceWorker.register("sw.js").catch(function(){})})}
+</script>
+<script id="cc-haptics">
+(()=>{
+  // lets :active press feedback work on iOS Safari
+  document.addEventListener("touchstart",()=>{},{passive:true});
+  const ok=typeof navigator.vibrate==="function"&&!matchMedia("(prefers-reduced-motion:reduce)").matches;
+  window.ccBuzz=p=>{if(!ok)return;try{navigator.vibrate(p)}catch(e){}};
+  if(!ok)return;
+  document.addEventListener("click",e=>{if(e.target.closest(".dock button,.seg button,.pill,.sw,.theme-switch,.btn.alt,.more button"))window.ccBuzz(6)},{passive:true});
+  document.addEventListener("change",e=>{if(e.target.matches&&e.target.matches("input[type=checkbox]"))window.ccBuzz(8)});
+})();
 </script>
 </body>
 </html>
